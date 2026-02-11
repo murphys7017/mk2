@@ -47,3 +47,16 @@ class GateConfigProvider:
         except Exception as e:
             logger.warning(f"Gate config reload failed: {e}")
             return False
+
+    def update_overrides(self, **kwargs) -> bool:
+        """Update overrides by replacing snapshot reference. Returns True if changed."""
+        try:
+            current = self._ref
+            updated = current.with_overrides(**kwargs)
+            if updated is current:
+                return False
+            self._ref = updated
+            return True
+        except Exception as e:
+            logger.warning(f"Gate overrides update failed: {e}")
+            return False

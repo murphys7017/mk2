@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -115,6 +116,14 @@ class GateConfig:
 
     def get_policy(self, scene: Scene) -> ScenePolicy:
         return self.scene_policy(scene)
+
+    def with_overrides(self, **kwargs: Any) -> "GateConfig":
+        new_overrides = replace(self.overrides, **{
+            k: v for k, v in kwargs.items() if hasattr(self.overrides, k) and v is not None
+        })
+        if new_overrides == self.overrides:
+            return self
+        return replace(self, overrides=new_overrides)
 
     @staticmethod
     def default() -> "GateConfig":

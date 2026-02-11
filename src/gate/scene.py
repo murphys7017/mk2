@@ -15,7 +15,7 @@ class SceneInferencer:
         if obs.obs_type == ObservationType.ALERT:
             wip.scene = Scene.ALERT
             return
-        if obs.obs_type == ObservationType.SCHEDULE or obs.obs_type == ObservationType.SYSTEM:
+        if obs.obs_type in (ObservationType.SCHEDULE, ObservationType.SYSTEM, ObservationType.CONTROL):
             wip.scene = Scene.SYSTEM
             return
         if obs.obs_type == ObservationType.MESSAGE:

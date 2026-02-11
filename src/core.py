@@ -26,6 +26,7 @@ from .adapters.interface.base import BaseAdapter
 from .gate import DefaultGate
 from .gate.types import GateAction, GateContext
 from .config_provider import GateConfigProvider
+from .system_reflex import SystemReflexController, ReflexConfig
 
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,11 @@ class Core:
         self.gate: DefaultGate = gate or DefaultGate()
         self.gate_config_provider: GateConfigProvider = (
             gate_config_provider or GateConfigProvider("config/gate.yaml")
+        )
+        self.system_reflex = SystemReflexController(
+            self.gate_config_provider,
+            config=ReflexConfig(),
+            system_session_key=self.system_session_key,
         )
 
         # Session GC 配置
@@ -474,6 +480,10 @@ class Core:
         """
         if obs.obs_type == ObservationType.ALERT:
             await self._on_system_pain(obs)
+        elif obs.obs_type == ObservationType.CONTROL:
+            emits = self.system_reflex.handle_observation(obs, datetime.now(timezone.utc))
+            for emit_obs in emits:
+                self.bus.publish_nowait(emit_obs)
         elif obs.obs_type == ObservationType.SCHEDULE:
             await self._on_system_tick(obs)
         else:

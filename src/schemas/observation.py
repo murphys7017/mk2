@@ -25,6 +25,7 @@ class ObservationType(str, Enum):
     MESSAGE = "message"        # 有人说话 / Someone said something
     WORLD_DATA = "world_data"  # 世界数据（天气、指标等）/ External world data
     ALERT = "alert"            # 告警、异常 / Alert or anomaly
+    CONTROL = "control"        # 控制/调节 / Control or tuning
     SCHEDULE = "schedule"      # 定时事件 / Scheduled event
     SYSTEM = "system"          # 系统内部事件 / Internal system event
 
@@ -142,6 +143,16 @@ class AlertPayload:
 
 
 @dataclass(frozen=True)
+class ControlPayload:
+    """
+    控制/调节类观察
+    Control/tuning observation
+    """
+    kind: str
+    data: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class SchedulePayload:
     """
     定时 / 计划事件
@@ -151,7 +162,7 @@ class SchedulePayload:
     data: Dict[str, Any] = field(default_factory=dict)
 
 
-Payload = MessagePayload | WorldDataPayload | AlertPayload | SchedulePayload
+Payload = MessagePayload | WorldDataPayload | AlertPayload | ControlPayload | SchedulePayload
 
 
 # ============================================================
