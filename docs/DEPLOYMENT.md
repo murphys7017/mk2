@@ -608,9 +608,9 @@ uv run pytest --cov=src --cov-report=html
 
 ## 11. 支持与反馈
 
-- **文档**: 查阅 [README.md](README.md) 和 [ARCHITECTURE.md](ARCHITECTURE.md)
+- **文档**: 查阅 [README.md](../README.md) 和 [ARCHITECTURE.md](ARCHITECTURE.md)
 - **问题排查**: 运行 `health_check.sh` 和 `uv run pytest -v`
-- **代码**: 查看 [src/](src/) 中的类型注解和文档字符串
+- **代码**: 查看 [src/](../src/) 中的类型注解和文档字符串
 
 ---
 

@@ -570,15 +570,15 @@ print(f"Session {session_key}: {metrics.session_metrics[session_key]}")
 
 | 文件 | 用途 |
 |------|------|
-| [src/schemas/observation.py](src/schemas/observation.py) | 观察数据模型 |
-| [src/session_state.py](src/session_state.py) | 会话运行时状态 |
-| [src/core.py](src/core.py) | 系统编排器 |
-| [src/gate/](src/gate/) | 门控管道 (12 级) |
-| [src/nociception.py](src/nociception.py) | 痛觉系统 |
-| [src/config_provider.py](src/config_provider.py) | 配置热加载 |
-| [src/system_reflex/](src/system_reflex/) | Agent 建议处理 |
-| [config/gate.yaml](config/gate.yaml) | 门控策略配置 |
-| [tests/](tests/) | 30 个单元 + 集成测试 |
+| [src/schemas/observation.py](../src/schemas/observation.py) | 观察数据模型 |
+| [src/session_state.py](../src/session_state.py) | 会话运行时状态 |
+| [src/core.py](../src/core.py) | 系统编排器 |
+| [src/gate/](../src/gate/) | 门控管道 (12 级) |
+| [src/nociception.py](../src/nociception.py) | 痛觉系统 |
+| [src/config_provider.py](../src/config_provider.py) | 配置热加载 |
+| [src/system_reflex/](../src/system_reflex/) | Agent 建议处理 |
+| [config/gate.yaml](../config/gate.yaml) | 门控策略配置 |
+| [tests/](../tests/) | 30 个单元 + 集成测试 |
 
 ---
 

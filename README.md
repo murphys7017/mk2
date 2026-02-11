@@ -1,664 +1,225 @@
-# MK2: Long-Running Agent Core
+# 🧠 项目概述 —— 一个长期运行的类生命体 Agent 系统
 
-**A production-grade framework for autonomous Agent systems with self-adaptive capabilities, multi-source event routing, and safety-bounded Agent participation.**
+## 这不是一个简单的对话机器人
 
----
+本项目构建的并不是一个“包装 LLM 的聊天接口”，而是一个：
 
-## 🎯 Quick Overview
+> **长期运行、多会话并发、自我保护、可调节的 Agent 系统**
 
-MK2 is a sophisticated Agent orchestration framework that handles:
+系统设计参考类生命体结构：
 
-- **Multi-source event ingestion**: Text adapters, timers, external systems
-- **Session isolation**: Per-user/conversation state, metrics, queues  
-- **Smart observation filtering**: 12-stage gate pipeline (scene classification → scoring → deduplication → policy routing)
-- **Self-adaptive control**: Auto-detect overload → emergency mode, and allow Agent to request temporary tuning (with whitelist + TTL)
-- **Pain-driven autonomy**: Error aggregation + burst detection → automatic adapter cooldown
+> 感知 → 反射 → 认知 → 行动 → 反馈 → 自主调节
 
-**Status**: ✅ **30/30 tests passing** | Production-ready MVP
+目标是构建一个：
 
----
-
-## 📋 Table of Contents
-
-1. [Quick Start](#quick-start)
-2. [Architecture](#architecture)
-3. [Core Subsystems](#core-subsystems)
-4. [Configuration](#configuration)
-5. [Agent Integration](#agent-integration)
-6. [API Examples](#api-examples)
-7. [Testing](#testing)
-8. [Deployment](#deployment)
+* 可长期运行
+* 支持多 session 并发
+* 具备过载保护能力
+* 支持运行时降级
+* 可自动恢复
+* 支持工具扩展
+* 支持模型分层
+* 可观测、可调节、可回滚
 
 ---
 
-## 🚀 Quick Start
+# 🏗 系统整体架构
 
-### Prerequisites
-
-```bash
-# Python 3.11+, uv package manager
-uv --version
-```
-
-### Installation
-
-```bash
-cd mk2
-uv sync
-```
-
-### Run Tests
-
-```bash
-uv run pytest -v
-```
-
-### Run the System
-
-```bash
-uv run python main.py
-```
-
-Output:
-```
-Starting Core...
-[INFO] Core initialized with 1000-item bus
-[INFO] TextAdapter (text_input) running
-[INFO] TimerTickAdapter (timer_tick) running
-[INFO] SessionRouter listening
-[INFO] GC loop started
-...
-```
+系统被划分为三个结构层级：
 
 ---
 
-## 🏗️ Architecture
+## 1️⃣ 脑干层（Gate）—— 反射与保护层
 
-### Data Flow
+该层已经实现完成。
 
-```
-Adapter Layer
-    ├─ TextInput     (manual messages)
-    ├─ TimerTick     (periodic events)
-    └─ ExternalSys   (webhook data)
-         │
-         ▼
-    InputBus (async pubsub)
-         │
-         ▼
-    SessionRouter (demux by session_key)
-         │
-         ├─ session1_inbox ──┐
-         ├─ session2_inbox ──┤
-         └─ system_inbox ────┤
-                             │
-                             ▼
-                    SessionWorker (per-session)
-                             │
-                        ┌────┴────┐
-                        ▼         ▼
-                    Gate          Config Hot-Reload
-                   (12 stages)    (snapshot-based)
-                        │
-                        ├─ SceneInferencer
-                        ├─ HardBypass
-                        ├─ FeatureExtractor
-                        ├─ ScoringStage
-                        ├─ Deduplicator
-                        ├─ PolicyMapper
-                        └─ FinalizeStage
-                        │
-                        ▼
-                    GateOutcome
-                    (action + emit/ingest)
-                        │
-         ┌──────────────┼──────────────┐
-         ▼              ▼              ▼
-      DELIVER        SINK           DROP
-      (to Agent)  (SinkPool)    (DropPool)
-```
+### 职责
 
-### Key Concepts
+* 场景识别（scene inference）
+* 打分与分流
+* 去重
+* 速率控制
+* 过载保护
+* DROP / SINK / DELIVER 决策
+* 运行时 overrides（emergency / 强制 low 模型）
 
-| Concept | Purpose | Example |
-|---------|---------|---------|
-| **Observation** | Unified event type | MESSAGE, ALERT, CONTROL, WORLD_DATA |
-| **Scene** | Obs classification | DIALOGUE, GROUP, ALERT, SYSTEM, TOOL_* |
-| **Gate** | Multi-stage filter | Score obs, deduplicate, route to pool |
-| **Pool** | Buffered output | SinkPool, DropPool, ToolPool |
-| **Session** | User/conversation context | isolation + state + metrics |
-| **Nociception** | Pain (error) system | Aggregate errors → burst detection → cooldown |
-| **SystemReflex** | Self-adjustment + Agent participation | Auto-enter emergency mode, accept tuning suggestions |
-| **Override** | Dynamic config override | force_low_model, emergency_mode (whitelist) |
+### 特点
+
+* 规则驱动
+* 无 LLM 参与
+* 快速且可预测
+* YAML 配置驱动
+* 支持热更新
+* 仅负责门控，不负责智能
+
+Gate 是系统的“反射系统”，而不是“思考系统”。
 
 ---
 
-## 🔧 Core Subsystems
+## 2️⃣ 认知层（Agent）—— 智能与规划层
 
-### 1. Session Management (`src/session_state.py`)
+该层正在进入主要开发阶段。
 
-Lightweight per-session runtime state:
+### 规划职责
 
-```python
-from src.session_state import SessionState
+* 意图识别（IntentJudge）
+* 任务规划（Planner）
+* 记忆管理
+* 工具调用决策
+* 多模型策略
+* 结构化响应生成
 
-state = SessionState()
-state.touch()  # Update last active timestamp
-state.record(obs)  # Log observation + update activity
-idle_secs = state.idle_seconds()  # None if never active, else elapsed
-print(f"Processed: {state.processed_total}, Errors: {state.error_total}")
-```
+Agent 只处理通过 Gate 的输入。
 
-**Features**:
-- Idle time tracking (used by GC)
-- Recent observation buffer (20 items)
-- Error counter
-- Isolation from other sessions
+它不再负责：
 
----
+* 是否响应
+* 过载保护
+* 降级决策
+* 去重
 
-### 2. Core Orchestrator (`src/core.py`)
-
-Central coordinator for all subsystems:
-
-```python
-from src.core import Core
-
-core = Core(bus_maxsize=1000, gc_check_interval_sec=1.0)
-await core.register_adapter(text_adapter)
-await core.start()  # Starts worker tasks, GC loop
-...
-await core.stop()  # Graceful shutdown
-```
-
-**Responsibilities**:
-- Maintain session state + worker tasks
-- Call `gate.handle(obs, ctx)` for each observation
-- Execute gate outcomes (emit → bus, ingest → pools)
-- Manage pain aggregation + adapter cooldown
-- Run GC loop for idle session cleanup
-- Integrate SystemReflexController for Agent tuning
+这些全部由脑干层处理。
 
 ---
 
-### 3. Gate Pipeline (`src/gate/`)
+## 3️⃣ 自主神经层（System Reflex）—— 自我调节系统
 
-12-stage filtering pipeline:
+该层已实现 MVP，并具备闭环能力。
+
+### 已实现闭环
 
 ```
-obs → Scene (DIALOGUE/GROUP/ALERT/SYSTEM/...)
-   → HardBypass (DROP if overloaded)
-   → FeatureExtractor (text_len, has_question, alert_severity, ...)
-   → ScoringStage (aggregate features → 0.0-1.0)
-   → Deduplicator (skip if seen recently, except ALERT)
-   → PolicyMapper (score → action via threshold)
-   → FinalizeStage (apply overrides, return GateDecision)
-   → GateOutcome (emit/ingest/decision)
+Gate 发出 ALERT
+→ system session 聚合统计
+→ Reflex Controller 判断
+→ 修改 overrides
+→ Gate 行为改变
+→ 广播 CONTROL(system_mode_changed)
 ```
 
-**Scene Policies** (configured in `config/gate.yaml`):
-- **DIALOGUE**: deliver_threshold=0.75 (require higher score)
-- **GROUP**: deliver_threshold=0.85 (stricter)
-- **ALERT**: deliver_threshold=0.0 (always deliver, never drop)
-- **SYSTEM**: deliver_threshold=0.0 (always deliver)
+### 当前能力
 
-**Actions**:
-- **DELIVER**: Pass to Agent
-- **SINK**: Buffer in SinkPool (human review)
-- **DROP**: Buffer in DropPool (monitoring)
+* emergency 模式自动触发
+* 强制 low 模型
+* drop burst 监测
+* TTL 限时调节
+* Agent 调节建议（白名单 + TTL + 冷却）
+* 自动恢复机制
+
+### 设计原则
+
+* 不使用 LLM
+* 纯规则反射
+* 可观测
+* 可恢复
+* 无隐藏通道
 
 ---
 
-### 4. Nociception (Pain System) (`src/nociception.py`)
+# 🔄 运行时主流程
 
-Error aggregation + burst detection:
-
-```python
-from src.nociception import make_pain_alert, extract_pain_key
-
-# Adapter captures exception
-try:
-    await adapter.read_data()
-except ConnectionError as e:
-    pain_obs = make_pain_alert(
-        source_kind="adapter",
-        source_id="text_input",
-        severity="HIGH",
-        exception_type="ConnectionError"
-    )
-    await bus.publish(pain_obs)
+```
+Adapter
+→ Observation
+→ InputBus
+→ SessionRouter
+→ SessionWorker
+→ Gate（脑干）
+→ Agent（认知）
+→ Tool（未来扩展）
+→ Observation 回流
+→ System Reflex（自主神经）
 ```
 
-**Burst Detection**:
-- Window: 60 seconds
-- Threshold: 5 pain events → **trigger adapter cooldown (300 sec)**
-- Cooldown effect: Adapter is disabled, HardBypass drops its observations
+所有状态变化都通过 Observation 传播。
 
-**Metrics**:
-- pain_total: Sum of all ALERT obs
-- pain_by_source: Aggregated by "source_kind:source_id"
-- pain_by_severity: Count by CRITICAL/HIGH/LOW
-- adapter_cooldowns: Map of cooldown_until_ts per adapter
+系统不存在隐式全局变量修改。
 
 ---
 
-### 5. Configuration System (`src/config_provider.py` + `config/gate.yaml`)
+# ⚙ 配置系统
 
-**Hot-reload design** (no locks, mtime-based):
+Gate 使用 YAML 配置驱动：
 
-```python
-from src.config_provider import GateConfigProvider
+* Scene 策略
+* 打分权重
+* 去重窗口
+* Drop 升级规则
+* 运行时 overrides
 
-provider = GateConfigProvider("config/gate.yaml")
+支持：
 
-# Worker loop
-for obs in session_inbox:
-    provider.reload_if_changed()  # Check mtime, auto-reload if changed
-    config = provider.snapshot()  # Get current config (fast, no lock)
-    ctx = GateContext(..., config=config)
-    outcome = gate.handle(obs, ctx)
-```
-
-**Dynamic Overrides**:
-
-```python
-# Agent requests tuning
-provider.update_overrides(force_low_model=True)  # Returns True if changed
-
-# Later, revert
-provider.update_overrides(force_low_model=False)
-```
-
-**Config File Example** (`config/gate.yaml`):
-
-```yaml
-version: "1.0"
-
-scene_policies:
-  DIALOGUE:
-    deliver_threshold: 0.75
-    response_policy: DELIVER
-  ALERT:
-    deliver_threshold: 0.0
-    response_policy: DELIVER
-
-rules:
-  dialogue:
-    weights:
-      text_len: 0.2
-      has_question: 0.3
-      has_bot_mention: 0.25
-
-drop_escalation:
-  critical_count_threshold: 20
-  action: EMIT_SYSTEM_PAIN
-
-overrides:
-  emergency_mode: false        # Auto-set by pain burst
-  force_low_model: false       # Set by Agent suggestion
-```
+* 默认值兜底
+* 强类型映射
+* 热更新快照替换
+* system_reflex 运行时修改
 
 ---
 
-### 6. System Reflex (`src/system_reflex/`)
+# 🛡 运行时安全模型
 
-Agent-safe self-adjustment:
+系统强制边界：
 
-```python
-from src.system_reflex.controller import SystemReflexController
-from src.schemas.observation import Observation, ControlPayload, ObservationType
+* Gate 不调用 Agent
+* Agent 不能直接修改 Gate
+* Agent 只能“建议”调节
+* system_reflex 是唯一可执行 override 的层
+* 所有状态变化都会发出事件
 
-# Agent sends suggestion
-suggestion_obs = Observation(
-    obs_type=ObservationType.CONTROL,
-    source_name="agent",
-    session_key="system",
-    payload=ControlPayload(
-        kind="tuning_suggestion",
-        data={
-            "suggested_overrides": {"force_low_model": True},
-            "ttl_sec": 60,  # Auto-revert after 60 seconds
-            "reason": "latency_high"
-        }
-    )
-)
-await bus.publish(suggestion_obs)
-
-# SystemReflexController processes suggestion
-# 1. Validate whitelist: ✓ force_low_model allowed
-# 2. Check cooldown: ✓ (not recently applied)
-# 3. Apply: update_overrides(force_low_model=True)
-# 4. Emit: system_mode_changed control
-# 5. Auto-revert: after 60 sec, revert to False
-```
-
-**Safety Mechanisms**:
-- **Whitelist**: Only `force_low_model` allowed (not `emergency_mode`)
-- **Cooldown**: Min 30 sec between suggestions
-- **TTL**: Auto-revert after timeout (no manual cleanup needed)
-- **Auditability**: All transitions emit CONTROL observations
+防止出现不可控的反馈环。
 
 ---
 
-## 📝 Configuration
+# 📈 当前完成阶段
 
-### Gate Configuration (`config/gate.yaml`)
+已完成：
 
-**Sections**:
+* 输入主干
+* 多 session 隔离
+* Gate 反射系统
+* YAML 配置 + 热更新
+* 运行时 overrides
+* System 自调节闭环
+* Agent 通知机制
+* Agent 调节建议机制
 
-1. **scene_policies**: Per-scene scoring thresholds
-   ```yaml
-   DIALOGUE:
-     deliver_threshold: 0.75    # Must score ≥0.75 to deliver
-     response_policy: DELIVER    # Final action if threshold met
-   ```
+系统已具备：
 
-2. **rules**: Feature weights + keywords
-   ```yaml
-   dialogue:
-     weights:
-       text_len: 0.2
-       has_question: 0.3
-       has_bot_mention: 0.25
-     keywords:
-       low_score: ["spam", "gibberish"]
-       high_score: ["urgent", "important"]
-   ```
-
-3. **drop_escalation**: DROP burst monitoring
-   ```yaml
-   drop_escalation:
-     monitor_window_sec: 60
-     critical_count_threshold: 20   # 20 DROPs in 60 sec → EMIT_SYSTEM_PAIN
-     action: EMIT_SYSTEM_PAIN
-   ```
-
-4. **overrides**: Dynamic policies (set by system or Agent)
-   ```yaml
-   overrides:
-     emergency_mode: false          # Auto-set by pain burst
-     force_low_model: false         # Set by Agent suggestion
-   ```
-
-### Reload Behavior
-
-- **Check frequency**: Every observation (negligible overhead, <0.1ms)
-- **Trigger**: File mtime change
-- **Safety**: Snapshot-based (reference replacement, no locks)
-- **Effect**: Next worker cycle uses new config
+> 输入 → 门控 → 认知 → 反馈 → 自调节 的完整主循环。
 
 ---
 
-## 🤖 Agent Integration
+# 📚 文档
 
-### Observation Types
+详细文档请查阅 `docs/` 目录：
 
-```python
-from src.schemas.observation import ObservationType
-
-# For Agent to consume
-MESSAGE          # User/system text input
-WORLD_DATA       # External data
-ALERT            # Pain/error events
-SCHEDULE         # Timer events
-SYSTEM           # System events
-
-# For Agent to emit
-CONTROL          # Tuning suggestions, mode changes
-```
-
-### Agent Suggestion Workflow
-
-```python
-# 1. Agent detects problem (e.g., high latency)
-# 2. Send suggestion
-suggestion_obs = Observation(
-    obs_type=ObservationType.CONTROL,
-    source_name="agent",
-    session_key="system",
-    payload=ControlPayload(
-        kind="tuning_suggestion",
-        data={
-            "suggested_overrides": {
-                "force_low_model": True  # Use faster, lower-quality model
-            },
-            "ttl_sec": 60,  # Revert after 60 seconds
-            "reason": "latency_high"
-        }
-    )
-)
-await bus.publish(suggestion_obs)
-
-# 3. SystemReflexController processes:
-#    - Validates whitelist (force_low_model ✓ allowed)
-#    - Checks cooldown (prev suggestion > 30 sec ago ✓)
-#    - Applies override via config_provider
-#    - Emits system_mode_changed event
-#
-# 4. Subsequent observations:
-#    - Gate reads force_low_model=True from config
-#    - Uses lower scoring tier
-#    - Agents accepts lower-quality results
-#
-# 5. TTL expiry (60 sec):
-#    - SystemReflexController auto-reverts override
-#    - Emits revert control event
-#    - Back to normal quality mode
-```
-
-### Agent Constraints
-
-- **Whitelist-only**: Only `force_low_model` can be suggested (not `emergency_mode`)
-- **TTL-bounded**: Suggestions auto-expire (max 60 sec)
-- **Cooldown-gated**: Min 30 sec between suggestions (prevent thrashing)
-- **Auditable**: All changes emit CONTROL observations
+* [ARCHITECTURE.md](docs/ARCHITECTURE.md) - 系统架构详解
+* [DEPLOYMENT.md](docs/DEPLOYMENT.md) - 部署指南
+* [DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md) - 设计决策记录
 
 ---
 
-## 💻 API Examples
+# 🚀 下一阶段
 
-### Creating an Adapter
+重点进入认知层建设：
 
-```python
-from src.adapters.interface.base import BaseAdapter
-from src.schemas.observation import Observation, MessagePayload
+* IntentJudge
+* QueryPlan
+* Memory 优化
+* Tool 子系统
+* 多模型协作
 
-class CustomAdapter(BaseAdapter):
-    async def run(self):
-        while not self.should_stop():
-            try:
-                data = await self.fetch_data()
-                obs = Observation(
-                    obs_type=ObservationType.MESSAGE,
-                    source_name="custom",
-                    session_key="system",
-                    payload=MessagePayload(text=data)
-                )
-                await self.bus.publish(obs)
-                await asyncio.sleep(1)
-            except Exception as e:
-                from src.nociception import make_pain_alert
-                pain_obs = make_pain_alert(
-                    source_kind="adapter",
-                    source_id="custom",
-                    severity="HIGH",
-                    exception_type=type(e).__name__
-                )
-                await self.bus.publish_nowait(pain_obs)
-```
-
-### Reading Current Metrics
-
-```python
-# In Core or external monitoring
-metrics = core.metrics
-
-print(f"Total pain events: {metrics.pain_total}")
-print(f"Drop count: {metrics.drop_monitored}")
-
-# Per-session metrics
-for session_key, session_metrics in metrics.session_metrics.items():
-    print(f"{session_key}: processed={session_metrics.processed}, "
-          f"errors={session_metrics.error_total}, "
-          f"delivered={session_metrics.gate_decisions.get('DELIVER', 0)}")
-
-# Adapter cooldowns
-print(f"Cooldowns active: {metrics.adapter_cooldowns}")
-```
-
-### Accessing Gate Config in Custom Stage
-
-```python
-from src.gate.pipeline.base import GateStage
-
-class CustomStage(GateStage):
-    async def apply(self, wip: GateWip) -> GateWip:
-        config = wip.ctx.config
-        
-        # Read scene policy
-        scene_policy = config.scene_policy(str(wip.scene))
-        deliver_threshold = scene_policy.deliver_threshold
-        
-        # Check override
-        if config.overrides.emergency_mode:
-            print("System in emergency mode!")
-        
-        return wip
-```
+结构地基已完成。
 
 ---
 
-## ✅ Testing
+# 🎯 最终愿景
 
-### Run All Tests
+本项目目标是构建：
 
-```bash
-uv run pytest -v
-```
+> 一个可长期运行、可自我保护、可调节、可恢复的智能体系统。
 
-**Coverage** (30/30 passing):
-
-| Module | Tests | Focus |
-|--------|-------|-------|
-| core_metrics | 2 | Session isolation, metric increments |
-| session_gc | 3 | Idle detection, cleanup, timeouts |
-| nociception_v0 | 3 | Pain creation, aggregation, burst |
-| gate_mvp | 6 | Scene inference, scoring, dedup, policy |
-| gate_worker_integration | 3 | emit/ingest routing, action branching |
-| gate_config_loading | 3 | YAML parsing, defaults, overrides |
-| gate_config_hot_reload | 1 | File mtime detection |
-| system_reflex_v2 | 4 | Suggestion apply, whitelist, TTL, cooldown |
-
-### Test Pattern
-
-```python
-# tests/test_example.py
-import pytest
-from src.core import Core
-from src.schemas.observation import Observation, MessagePayload, ObservationType
-
-@pytest.mark.asyncio
-async def test_my_feature():
-    core = Core(bus_maxsize=100)
-    await core.start()
-    
-    obs = Observation(
-        obs_type=ObservationType.MESSAGE,
-        source_name="test",
-        session_key="test_session",
-        payload=MessagePayload(text="hello")
-    )
-    
-    await core.bus.publish(obs)
-    await asyncio.sleep(0.1)  # Let worker process
-    
-    state = core._states.get("test_session")
-    assert state is not None
-    assert state.processed_total == 1
-    
-    await core.stop()
-```
+不是单纯“更聪明”，
+而是“结构上更稳定”。
 
 ---
-
-## 🚢 Deployment
-
-### Checklist
-
-- [x] SessionState + CoreMetrics integration
-- [x] GC loop with safe cancellation
-- [x] Nociception (pain aggregation + burst detection → cooldown)
-- [x] Gate pipeline (12 stages, scene-aware, configurable)
-- [x] Gate YAML config + hot reload
-- [x] Gate-Worker integration
-- [x] SystemReflexController (Agent suggestions)
-- [x] CONTROL observation type
-- [x] All 30 tests passing
-
-### Production Setup
-
-```bash
-# 1. Copy config/gate.yaml to /etc/mk2/gate.yaml (or set env var)
-# 2. Create logs/ directory
-# 3. Set Python path
-export PYTHONPATH=/opt/mk2:$PYTHONPATH
-
-# 4. Run with supervisor or systemd
-uv run python main.py
-
-# 5. Monitor logs
-tail -f logs/mk2.log
-
-# 6. Check metrics (HTTP endpoint, if exposed)
-curl http://localhost:8080/metrics
-```
-
-### Performance Characteristics
-
-| Operation | Latency | Throughput |
-|-----------|---------|-----------|
-| obs publish → queue | <1ms | 1000+ obs/sec |
-| Gate pipeline (full) | 2-5ms | 200+ obs/sec/worker |
-| Config hot-reload check | <0.1ms | Every obs |
-| GC scan (1000 sessions) | ~50ms | 1 iteration/sec |
-
-### Scaling Notes
-
-- **Single-core**: 100+ concurrent sessions
-- **Multi-core**: Scale workers per CPU core
-- **Adapter parallelism**: Each adapter can run independently
-- **Config reload**: Atomic (no blocking locks)
-
----
-
-## 📚 Documentation
-
-- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Deep dive into system design, data flows, metrics
-- **[src/](src/)**: Inline code comments and type hints
-- **[tests/](tests/)**: Executable examples
-
----
-
-## 🔮 Roadmap
-
-### Phase 7 (Planned)
-- [ ] Validator stage for tuning suggestions (payload schema, value ranges)
-- [ ] Tool result observation routing (to ToolPool, Agent-accessible history)
-- [ ] Simple rule-based intent classification from MESSAGE obs
-- [ ] Core parameters extracted to separate config.yaml (bus_maxsize, GC timings, etc.)
-- [ ] Adapter configuration via YAML (timer interval, names, etc.)
-- [ ] Metrics persistence (periodic flush to file/database)
-- [ ] Graceful degradation under extreme load (auto-drop low-priority sessions)
-
----
-
-## 📞 Support
-
-For issues or questions:
-1. Check [ARCHITECTURE.md](ARCHITECTURE.md) for design details
-2. Run tests: `uv run pytest -v` to verify setup
-3. Review inline comments in [src/](src/)
-
----
-
-**Built with ❤️ for autonomous Agent systems.**
