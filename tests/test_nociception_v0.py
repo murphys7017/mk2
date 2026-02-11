@@ -8,6 +8,32 @@ from src.nociception import make_pain_alert, extract_pain_key
 pytestmark = pytest.mark.asyncio
 
 
+async def _stop_core(run_task: asyncio.Task, core, timeout: float = 1.5):
+    """
+    Gracefully stop Core with timeout protection.
+
+    - First attempt core.shutdown() if available.
+    - Then cancel run_task.
+    - Await with timeout to prevent hanging teardown.
+    """
+    try:
+        if hasattr(core, "shutdown"):
+            await core.shutdown()
+    except Exception:
+        pass
+
+    run_task.cancel()
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(run_task, return_exceptions=True),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        # Fail fast instead of hanging forever
+        raise RuntimeError("Core shutdown timeout in test teardown")
+
+
 async def test_pain_aggregation():
     """Test 1: pain 聚合"""
     core = Core(
@@ -42,11 +68,7 @@ async def test_pain_aggregation():
         print("✅ Test 1 passed: pain aggregation")
 
     finally:
-        run_task.cancel()
-        try:
-            await run_task
-        except asyncio.CancelledError:
-            pass
+        await _stop_core(run_task, core)
 
 
 async def test_burst_triggers_cooldown():
@@ -84,11 +106,7 @@ async def test_burst_triggers_cooldown():
         print("✅ Test 2 passed: burst triggers cooldown")
 
     finally:
-        run_task.cancel()
-        try:
-            await run_task
-        except asyncio.CancelledError:
-            pass
+        await _stop_core(run_task, core)
 
 
 async def test_drop_overload_suppresses_fanout():
@@ -142,11 +160,7 @@ async def test_drop_overload_suppresses_fanout():
         print("✅ Test 3 passed: drop overload suppresses fanout")
 
     finally:
-        run_task.cancel()
-        try:
-            await run_task
-        except asyncio.CancelledError:
-            pass
+        await _stop_core(run_task, core)
 
 
 async def test_extract_pain_key():

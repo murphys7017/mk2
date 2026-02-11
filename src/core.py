@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
@@ -27,6 +28,7 @@ from .gate import DefaultGate
 from .gate.types import GateAction, GateContext
 from .config_provider import GateConfigProvider
 from .system_reflex import SystemReflexController, ReflexConfig
+from .agent import DefaultAgentOrchestrator, AgentRequest
 
 
 logger = logging.getLogger(__name__)
@@ -132,6 +134,9 @@ class Core:
             config=ReflexConfig(),
             system_session_key=self.system_session_key,
         )
+
+        # Agent orchestrator
+        self.agent = DefaultAgentOrchestrator()
 
         # Session GC 配置
         self.enable_session_gc = enable_session_gc
@@ -404,6 +409,12 @@ class Core:
         单个 session 的 worker 循环：串行消费 inbox。
         每处理一条 obs 都更新 state 和 metrics。
 
+        包含详细的日志输出：
+        - [WORKER:IN] obs 信息
+        - [GATE:CTX] 上下文信息
+        - [GATE:OUT] 决策输出
+        - [DELIVER] 最终投递内容
+
         注意：不要 swallow CancelledError。
         """
         inbox = self.router.get_inbox(session_key)
@@ -412,10 +423,22 @@ class Core:
         try:
             while not self._closing:
                 obs = await inbox.get()
+                
+                # [WORKER:IN] 日志
+                obs_info = {
+                    "obs_id": obs.obs_id if hasattr(obs, 'obs_id') else "unknown",
+                    "obs_type": obs.obs_type.value if hasattr(obs.obs_type, 'value') else str(obs.obs_type),
+                    "session_key": obs.session_key,
+                    "actor_id": obs.actor.actor_id if obs.actor else None,
+                    "timestamp": obs.timestamp.isoformat() if obs.timestamp else None,
+                }
+                print(f"[WORKER:IN] {json.dumps(obs_info, ensure_ascii=False)}")
+                
                 # 记录到 state 并更新 metrics
                 state.record(obs)
                 self.metrics.inc_processed(session_key)
                 self._worker_stats[session_key] += 1
+                
                 # Gate 处理（进入业务处理前）
                 self.gate_config_provider.reload_if_changed()
                 gate_ctx = GateContext(
@@ -427,7 +450,23 @@ class Core:
                     system_health=None,
                 )
 
+                # [GATE:CTX] 日志 - 打印上下文信息（至少 overrides）
+                ctx_info = {
+                    "config_version": gate_ctx.config.version if hasattr(gate_ctx.config, 'version') else None,
+                    "session_key": session_key,
+                    "state_processed": state.processed_total if state else 0,
+                }
+                print(f"[GATE:CTX] {json.dumps(ctx_info, ensure_ascii=False)}")
+
                 outcome = self.gate.handle(obs, gate_ctx)
+
+                # [GATE:OUT] 日志 - 打印决策信息
+                decision_info = {
+                    "action": outcome.decision.action.value if hasattr(outcome.decision.action, 'value') else str(outcome.decision.action),
+                    "emit_count": len(outcome.emit),
+                    "ingest_count": len(outcome.ingest),
+                }
+                print(f"[GATE:OUT] {json.dumps(decision_info, ensure_ascii=False)}")
 
                 # 1) emit
                 for emit_obs in outcome.emit:
@@ -441,8 +480,34 @@ class Core:
                 if outcome.decision.action in (GateAction.DROP, GateAction.SINK):
                     continue
 
-                # 4) DELIVER → 进入后续处理
-                await self._handle_observation(session_key, obs, state)
+                # 4) DELIVER → 进入后续处理，传递 GateDecision
+                # [DELIVER] 日志
+                deliver_info = {
+                    "obs_id": obs.obs_id if hasattr(obs, 'obs_id') else "unknown",
+                    "obs_type": obs.obs_type.value if hasattr(obs.obs_type, 'value') else str(obs.obs_type),
+                    "session_key": session_key,
+                    "action": outcome.decision.action.value if hasattr(outcome.decision.action, 'value') else str(outcome.decision.action),
+                }
+                print(f"[DELIVER] {json.dumps(deliver_info, ensure_ascii=False)}")
+                
+                # 调用 agent 处理
+                agent_req = AgentRequest(
+                    obs=obs,
+                    decision=outcome.decision,
+                    state=state,
+                    now=datetime.now(timezone.utc),
+                )
+                agent_resp = self.agent.handle(agent_req)
+                
+                # 发送 agent 的响应
+                for emit_obs in agent_resp.emit:
+                    self.bus.publish_nowait(emit_obs)
+                
+                # 如果 agent 出错，记录日志
+                if not agent_resp.success:
+                    logger.error(f"Agent error in session {session_key}: {agent_resp.error}")
+                
+                await self._handle_observation(session_key, obs, state, outcome.decision)
 
         except asyncio.CancelledError:
             logger.debug(f"Worker for session {session_key} cancelled")
@@ -457,20 +522,21 @@ class Core:
     # -------------------------
 
     async def _handle_observation(
-        self, session_key: str, obs: Observation, state: SessionState
+        self, session_key: str, obs: Observation, state: SessionState, decision=None
     ) -> None:
         """
         处理单个 observation（v0 版本）。
 
         - system session：调用 _handle_system_observation
         - 其他 session：调用 _handle_user_observation
+        - decision: GateDecision，用于 demo 可观测性
 
         v0 不引入 LLM/intent/memory。
         """
         if session_key == self.system_session_key:
             await self._handle_system_observation(obs, state)
         else:
-            await self._handle_user_observation(session_key, obs, state)
+            await self._handle_user_observation(session_key, obs, state, decision)
 
     async def _handle_system_observation(self, obs: Observation, state: SessionState) -> None:
         """
@@ -618,11 +684,13 @@ class Core:
                 )
 
     async def _handle_user_observation(
-        self, session_key: str, obs: Observation, state: SessionState
+        self, session_key: str, obs: Observation, state: SessionState, decision=None
     ) -> None:
         """
         处理用户 session 的 observation（v0 版本）。
 
+        - decision: GateDecision，用于 demo 可观测性
+        
         v0 行为：
         - 记录 debug：若 payload dict 且含 "i" 字段，append 到 processed_payloads[session_key]
         - 打印日志摘要

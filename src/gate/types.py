@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Protocol, TYPE_CHECKING
 
 from ..schemas.observation import Observation
 
@@ -54,6 +54,7 @@ class GateContext:
     metrics: Optional["GateMetrics"] = None
     session_state: Any = None
     system_health: Optional[Dict[str, Any]] = None
+    trace: Optional[Callable[[str, Any], None]] = None
 
 
 @dataclass

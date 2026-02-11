@@ -1,0 +1,26 @@
+version: 1
+
+default:
+  provider:
+    bailian:
+      - qwen-max
+      - qwen-long-latest
+
+providers:
+  bailian:
+    api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key: "<BAILIAN_API_KEY>"  # 支持直接写 key 或使用 <ENV_VAR>
+    models:
+      qwen-max:
+        temperature: 0.2
+        max_tokens: 1024
+      qwen-long-latest:
+        temperature: 0.2
+        max_tokens: 2048
+
+  ollama:
+    api_base: "http://localhost:11434"
+    models:
+      "qwen3:1.7b":
+        temperature: 0.2
+        num_ctx: 32768

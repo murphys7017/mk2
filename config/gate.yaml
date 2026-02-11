@@ -81,6 +81,6 @@ overrides:
   emergency_mode: false
   force_low_model: false
   drop_sessions: []
-  deliver_sessions: []
+  deliver_sessions: ["demo"]
   drop_actors: []
   deliver_actors: []

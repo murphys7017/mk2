@@ -38,8 +38,16 @@ class DefaultGatePipeline:
 
     def run(self, obs, ctx, wip) -> None:
         self.scene_inferencer.apply(obs, ctx, wip)
+        if ctx.trace:
+            ctx.trace("scene_inferencer", wip)
+        
         self.hard_bypass.apply(obs, ctx, wip)
+        if ctx.trace:
+            ctx.trace("hard_bypass", wip)
 
         pipeline = self.router.get_pipeline(wip.scene or Scene.UNKNOWN)
         for stage in pipeline:
             stage.apply(obs, ctx, wip)
+            if ctx.trace:
+                stage_name = stage.__class__.__name__
+                ctx.trace(stage_name, wip)
