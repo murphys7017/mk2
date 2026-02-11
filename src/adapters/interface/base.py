@@ -262,6 +262,11 @@ class BaseAdapter(ABC):
             "error_type": type(error).__name__,
             "error": str(error),
             "consecutive_failures": self._consecutive_failures,
+            "source_kind": "adapter",
+            "source_id": self.name,
+            "exception_type": type(error).__name__,
+            "where": "BaseAdapter._report_error",
+            "tags": ["exception"],
         }
         if data:
             payload_data.update(data)
@@ -273,7 +278,7 @@ class BaseAdapter(ABC):
             source_kind=self.source_kind,
             timestamp=now,
             received_at=now,
-            session_key="system:alerts",
+            session_key="system",
             actor=Actor(actor_id="system", actor_type="system", display_name="System"),
             payload=AlertPayload(
                 alert_type=alert_type,

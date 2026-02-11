@@ -1,0 +1,86 @@
+version: 1
+
+scene_policies:
+  dialogue:
+    deliver_threshold: 0.75
+    sink_threshold: 0.20
+    default_action: "sink"
+    default_model_tier: "low"
+    default_response_policy: "respond_now"
+    dedup_window_sec: 20
+    max_reasons: 5
+
+  group:
+    deliver_threshold: 0.85
+    sink_threshold: 0.30
+    default_action: "sink"
+    default_model_tier: "low"
+    default_response_policy: "defer"
+    dedup_window_sec: 30
+    max_reasons: 5
+
+  system:
+    deliver_threshold: 999
+    sink_threshold: 0
+    default_action: "sink"
+    default_model_tier: null
+    default_response_policy: null
+    dedup_window_sec: 5
+    max_reasons: 3
+
+  tool_call:
+    deliver_threshold: 0.50
+    sink_threshold: 0.10
+    default_action: "deliver"
+    default_model_tier: null
+    default_response_policy: null
+    dedup_window_sec: 10
+    max_reasons: 3
+
+  tool_result:
+    deliver_threshold: 0.90
+    sink_threshold: 0.10
+    default_action: "sink"
+    default_model_tier: null
+    default_response_policy: null
+    dedup_window_sec: 10
+    max_reasons: 3
+
+rules:
+  dialogue:
+    weights:
+      base: 0.10
+      mention: 0.40
+      question_mark: 0.15
+      long_text: 0.10
+    keywords:
+      urgent: 0.30
+      error: 0.25
+      help: 0.15
+    long_text_len: 300
+
+  group:
+    weights:
+      base: 0.05
+      mention: 0.60
+      whitelist_actor: 0.25
+    sample_rate: 0.02
+    whitelist_actors: []
+
+  system:
+    weights:
+      base: 0.0
+
+drop_escalation:
+  burst_window_sec: 10
+  burst_count_threshold: 20
+  consecutive_threshold: 8
+  cooldown_suggest_sec: 15
+
+overrides:
+  emergency_mode: false
+  force_low_model: false
+  drop_sessions: []
+  deliver_sessions: []
+  drop_actors: []
+  deliver_actors: []

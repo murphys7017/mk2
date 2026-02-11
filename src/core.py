@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
@@ -22,6 +23,9 @@ from .schemas.observation import (
     AlertPayload,
 )
 from .adapters.interface.base import BaseAdapter
+from .gate import DefaultGate
+from .gate.types import GateAction, GateContext
+from .config_provider import GateConfigProvider
 
 
 logger = logging.getLogger(__name__)
@@ -92,6 +96,8 @@ class Core:
         idle_ttl_seconds: float = 600,
         gc_sweep_interval_seconds: float = 30,
         min_sessions_to_gc: int = 1,
+        gate: Optional[DefaultGate] = None,
+        gate_config_provider: Optional[GateConfigProvider] = None,
     ) -> None:
         """
         参数：
@@ -114,6 +120,12 @@ class Core:
 
         self.system_session_key = system_session_key
         self.enable_system_fanout = enable_system_fanout
+
+        # Gate（可注入）
+        self.gate: DefaultGate = gate or DefaultGate()
+        self.gate_config_provider: GateConfigProvider = (
+            gate_config_provider or GateConfigProvider("config/gate.yaml")
+        )
 
         # Session GC 配置
         self.enable_session_gc = enable_session_gc
@@ -398,7 +410,32 @@ class Core:
                 state.record(obs)
                 self.metrics.inc_processed(session_key)
                 self._worker_stats[session_key] += 1
-                # 处理 observation
+                # Gate 处理（进入业务处理前）
+                self.gate_config_provider.reload_if_changed()
+                gate_ctx = GateContext(
+                    now=datetime.now(timezone.utc),
+                    config=self.gate_config_provider.snapshot(),
+                    system_session_key=self.system_session_key,
+                    metrics=self.gate.metrics,
+                    session_state=state,
+                    system_health=None,
+                )
+
+                outcome = self.gate.handle(obs, gate_ctx)
+
+                # 1) emit
+                for emit_obs in outcome.emit:
+                    self.bus.publish_nowait(emit_obs)
+
+                # 2) ingest
+                for ingest_obs in outcome.ingest:
+                    self.gate.ingest(ingest_obs, outcome.decision)
+
+                # 3) action 分支
+                if outcome.decision.action in (GateAction.DROP, GateAction.SINK):
+                    continue
+
+                # 4) DELIVER → 进入后续处理
                 await self._handle_observation(session_key, obs, state)
 
         except asyncio.CancelledError:
