@@ -102,6 +102,7 @@ class Core:
         min_sessions_to_gc: int = 1,
         gate: Optional[DefaultGate] = None,
         gate_config_provider: Optional[GateConfigProvider] = None,
+        agent_orchestrator: Optional[DefaultAgentOrchestrator] = None,
     ) -> None:
         """
         参数：
@@ -137,7 +138,7 @@ class Core:
         )
 
         # Agent orchestrator
-        self.agent_orchestrator = DefaultAgentOrchestrator()
+        self.agent_orchestrator = agent_orchestrator or DefaultAgentOrchestrator()
 
         # Session GC 配置
         self.enable_session_gc = enable_session_gc

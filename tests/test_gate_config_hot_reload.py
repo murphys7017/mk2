@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
-import time
 
 from src.config_provider import GateConfigProvider
 from src.gate.types import Scene
@@ -22,6 +22,7 @@ scene_policies:
     provider = GateConfigProvider(path)
     cfg1 = provider.snapshot()
     assert cfg1.scene_policy(Scene.DIALOGUE).deliver_threshold == 0.8
+    old_mtime = path.stat().st_mtime
 
     # 修改配置
     path.write_text(
@@ -34,8 +35,8 @@ scene_policies:
         encoding="utf-8",
     )
 
-    # 确保 mtime 变化
-    time.sleep(0.02)
+    # 强制保持相同 mtime，模拟 Windows 上 mtime 精度问题
+    os.utime(path, (old_mtime, old_mtime))
 
     changed = provider.reload_if_changed()
     cfg2 = provider.snapshot()

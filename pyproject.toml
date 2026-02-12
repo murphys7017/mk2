@@ -13,6 +13,9 @@ dependencies = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+markers = [
+    "integration: tests that require live external services",
+]
 
 
 [dependency-groups]

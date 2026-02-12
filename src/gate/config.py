@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import yaml
 
-from .types import Scene, GateAction
+from .types import Scene, GateAction, BudgetSpec
 
 
 @dataclass
@@ -81,12 +81,80 @@ class ScenePolicy:
 
 
 @dataclass
+class BudgetThresholdsConfig:
+    high_score: float = 0.75
+    medium_score: float = 0.50
+
+
+@dataclass
+class BudgetProfileConfig:
+    budget_level: Literal["tiny", "normal", "deep"] = "normal"
+    time_ms: int = 1500
+    max_tokens: int = 512
+    max_parallel: int = 2
+    evidence_allowed: bool = True
+    max_tool_calls: int = 1
+    can_search_kb: bool = True
+    can_call_tools: bool = True
+    auto_clarify: bool = False
+    fallback_mode: bool = False
+
+    def to_budget_spec(self) -> BudgetSpec:
+        return BudgetSpec(
+            budget_level=self.budget_level,
+            time_ms=self.time_ms,
+            max_tokens=self.max_tokens,
+            max_parallel=self.max_parallel,
+            evidence_allowed=self.evidence_allowed,
+            max_tool_calls=self.max_tool_calls,
+            can_search_kb=self.can_search_kb,
+            can_call_tools=self.can_call_tools,
+            auto_clarify=self.auto_clarify,
+            fallback_mode=self.fallback_mode,
+        )
+
+
+def _default_budget_profiles() -> Dict[str, BudgetProfileConfig]:
+    return {
+        "tiny": BudgetProfileConfig(
+            budget_level="tiny",
+            time_ms=800,
+            max_tokens=256,
+            max_parallel=1,
+            evidence_allowed=False,
+            max_tool_calls=0,
+            can_search_kb=True,
+            can_call_tools=True,
+            auto_clarify=True,
+        ),
+        "normal": BudgetProfileConfig(
+            budget_level="normal",
+            time_ms=1500,
+            max_tokens=512,
+            max_parallel=2,
+            evidence_allowed=True,
+            max_tool_calls=1,
+        ),
+        "deep": BudgetProfileConfig(
+            budget_level="deep",
+            time_ms=3000,
+            max_tokens=1024,
+            max_parallel=4,
+            evidence_allowed=True,
+            max_tool_calls=3,
+        ),
+    }
+
+
+@dataclass
 class GateConfig:
     version: int = 1
     drop_escalation: DropEscalationConfig = field(default_factory=DropEscalationConfig)
     scene_policies: Dict[Scene, ScenePolicy] = field(default_factory=dict)
     rules: GateRulesConfig = field(default_factory=GateRulesConfig)
     overrides: OverridesConfig = field(default_factory=OverridesConfig)
+    budget_thresholds: BudgetThresholdsConfig = field(default_factory=BudgetThresholdsConfig)
+    budget_profiles: Dict[str, BudgetProfileConfig] = field(default_factory=_default_budget_profiles)
 
     def scene_policy(self, scene: Scene) -> ScenePolicy:
         if scene in self.scene_policies:
@@ -116,6 +184,44 @@ class GateConfig:
 
     def get_policy(self, scene: Scene) -> ScenePolicy:
         return self.scene_policy(scene)
+
+    def budget_profile(self, level: str) -> BudgetProfileConfig:
+        profile = self.budget_profiles.get(level)
+        if profile is not None:
+            return profile
+        return _default_budget_profiles().get(level, _default_budget_profiles()["normal"])
+
+    def budget_for_level(self, level: str) -> BudgetSpec:
+        return self.budget_profile(level).to_budget_spec()
+
+    def select_budget(self, score: float, scene: Scene) -> BudgetSpec:
+        if scene == Scene.ALERT:
+            level = "deep"
+        elif scene == Scene.TOOL_CALL:
+            level = "normal"
+        elif scene == Scene.TOOL_RESULT:
+            level = "tiny"
+        else:
+            if score >= self.budget_thresholds.high_score:
+                level = "deep"
+            elif score >= self.budget_thresholds.medium_score:
+                level = "normal"
+            else:
+                level = "tiny"
+
+        budget = self.budget_for_level(level)
+
+        # scene-specific safety clamps
+        if scene == Scene.TOOL_RESULT:
+            budget.can_search_kb = False
+            budget.can_call_tools = False
+            budget.evidence_allowed = False
+            budget.max_tool_calls = 0
+
+        if scene == Scene.DIALOGUE and budget.budget_level == "tiny":
+            budget.auto_clarify = True
+
+        return budget
 
     def with_overrides(self, **kwargs: Any) -> "GateConfig":
         new_overrides = replace(self.overrides, **{
@@ -156,6 +262,39 @@ class GateConfig:
             raise ValueError(f"Unsupported gate config version: {version}")
 
         cfg = cls(version=version)
+
+        # budget thresholds
+        bt = data.get("budget_thresholds", {}) or {}
+        high_score = float(bt.get("high_score", cfg.budget_thresholds.high_score))
+        medium_score = float(bt.get("medium_score", cfg.budget_thresholds.medium_score))
+        if medium_score > high_score:
+            medium_score = high_score
+        cfg.budget_thresholds = BudgetThresholdsConfig(
+            high_score=high_score,
+            medium_score=medium_score,
+        )
+
+        # budget profiles
+        default_profiles = _default_budget_profiles()
+        raw_profiles = data.get("budget_profiles", {}) or {}
+        parsed_profiles: Dict[str, BudgetProfileConfig] = {}
+
+        for level, base in default_profiles.items():
+            raw = raw_profiles.get(level, {}) or {}
+            parsed_profiles[level] = BudgetProfileConfig(
+                budget_level=str(raw.get("budget_level", base.budget_level)),
+                time_ms=int(raw.get("time_ms", base.time_ms)),
+                max_tokens=int(raw.get("max_tokens", base.max_tokens)),
+                max_parallel=int(raw.get("max_parallel", base.max_parallel)),
+                evidence_allowed=bool(raw.get("evidence_allowed", base.evidence_allowed)),
+                max_tool_calls=int(raw.get("max_tool_calls", base.max_tool_calls)),
+                can_search_kb=bool(raw.get("can_search_kb", base.can_search_kb)),
+                can_call_tools=bool(raw.get("can_call_tools", base.can_call_tools)),
+                auto_clarify=bool(raw.get("auto_clarify", base.auto_clarify)),
+                fallback_mode=bool(raw.get("fallback_mode", base.fallback_mode)),
+            )
+
+        cfg.budget_profiles = parsed_profiles
 
         # drop escalation
         de = data.get("drop_escalation", {}) or {}

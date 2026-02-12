@@ -11,6 +11,15 @@ from src.adapters.text_input_adapter import TextInputAdapter
 from src.schemas.observation import Observation, ObservationType, Actor, MessagePayload
 
 
+async def _wait_until(predicate, *, timeout: float = 2.0, interval: float = 0.02):
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        if predicate():
+            return
+        await asyncio.sleep(interval)
+    raise AssertionError("wait_until timeout")
+
+
 @pytest.mark.asyncio
 async def test_core_metrics_and_states():
     """测试 Core 的 metrics 和 SessionState 功能"""
@@ -37,15 +46,15 @@ async def test_core_metrics_and_states():
 
     try:
         # 等待 Core 启动
-        await asyncio.sleep(0.2)
+        await _wait_until(lambda: core._router_task is not None and core._watcher_task is not None)
 
         # 投递几条消息
         text_adapter.ingest_text("Message 1", actor_id="alice", session_key="dm:alice")
         text_adapter.ingest_text("Message 2", actor_id="bob", session_key="dm:bob")
         text_adapter.ingest_text("Message 3", actor_id="alice", session_key="dm:alice")
 
-        # 等待处理
-        await asyncio.sleep(0.5)
+        # 等待处理完成
+        await _wait_until(lambda: core.metrics.processed_total >= 3)
 
         # ===== 验证 metrics =====
         # 注意：现在 Gate 会处理所有输入消息（包括 Agent 回复）
@@ -103,7 +112,7 @@ async def test_debug_payload_recording():
     run_task = asyncio.create_task(core.run_forever())
 
     try:
-        await asyncio.sleep(0.2)
+        await _wait_until(lambda: core._router_task is not None and core._watcher_task is not None)
 
         # 注意：TextInputAdapter 的 payload 是 MessagePayload，不是 dict
         # 所以这个测试需要我们手动发送观测或修改 adapter

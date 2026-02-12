@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..types import GateAction, GateContext, GateWip, Scene, GateHint, BudgetSpec
+from ..types import GateAction, GateContext, GateWip, Scene, GateHint
 from ...schemas.observation import ObservationType
 
 
@@ -33,7 +33,7 @@ class PolicyMapper:
                 wip.gate_hint = GateHint(
                     model_tier=policy.default_model_tier or "low",
                     response_policy=policy.default_response_policy or "respond_now",
-                    budget=self._select_budget(wip.score, scene),
+                    budget=ctx.config.select_budget(wip.score, scene),
                     reason_tags=["user_dialogue_safe_valve"],
                 )
                 return
@@ -47,10 +47,17 @@ class PolicyMapper:
                 wip.model_tier = "low"
                 wip.response_policy = policy.default_response_policy
                 wip.reasons.append("override=emergency")
+                emergency_budget = ctx.config.budget_for_level("tiny")
+                emergency_budget.time_ms = min(emergency_budget.time_ms, 300)
+                emergency_budget.max_tokens = min(emergency_budget.max_tokens, 128)
+                emergency_budget.evidence_allowed = False
+                emergency_budget.max_tool_calls = 0
+                emergency_budget.can_search_kb = False
+                emergency_budget.can_call_tools = False
                 wip.gate_hint = GateHint(
                     model_tier="low",
                     response_policy="ack",
-                    budget=BudgetSpec(budget_level="tiny", time_ms=300, max_tokens=128, evidence_allowed=False, max_tool_calls=0),
+                    budget=emergency_budget,
                     reason_tags=["emergency_mode"],
                 )
                 return
@@ -97,7 +104,7 @@ class PolicyMapper:
                         wip.gate_hint = GateHint(
                             model_tier=wip.model_tier or "low",
                             response_policy=wip.response_policy or "respond_now",
-                            budget=self._select_budget(wip.score, scene),
+                            budget=ctx.config.select_budget(wip.score, scene),
                             reason_tags=wip.reasons,
                         )
                     return
@@ -122,109 +129,8 @@ class PolicyMapper:
                 wip.gate_hint = GateHint(
                     model_tier=wip.model_tier or "low",
                     response_policy=wip.response_policy or "respond_now",
-                    budget=self._select_budget(wip.score, scene),
+                    budget=ctx.config.select_budget(wip.score, scene),
                     reason_tags=wip.reasons,
                 )
         except Exception as e:
             wip.reasons.append(f"policy_error:{e}")
-    
-    def _select_budget(self, score: float, scene: Scene) -> BudgetSpec:
-        """根据 score 和 scene 选择预算分档"""
-        
-        high_threshold = 0.75
-        medium_threshold = 0.50
-        
-        # SCENE 特定调整
-        if scene == Scene.ALERT:
-            # 告警总是 deep
-            return BudgetSpec(
-                budget_level="deep",
-                time_ms=3000,
-                max_tokens=1024,
-                max_parallel=4,
-                evidence_allowed=True,
-                max_tool_calls=3,
-                can_search_kb=True,
-                can_call_tools=True,
-            )
-        elif scene == Scene.TOOL_CALL:
-            # 工具调用 normal
-            return BudgetSpec(
-                budget_level="normal",
-                time_ms=1500,
-                max_tokens=512,
-                max_parallel=2,
-                evidence_allowed=True,
-                max_tool_calls=1,
-            )
-        elif scene == Scene.TOOL_RESULT:
-            # 工具结果 tiny（只做 ack）
-            return BudgetSpec(
-                budget_level="tiny",
-                time_ms=300,
-                max_tokens=256,
-                max_parallel=1,
-                evidence_allowed=False,
-                max_tool_calls=0,
-                can_search_kb=False,
-                can_call_tools=False,
-            )
-        elif scene == Scene.GROUP:
-            # 群聊根据 score
-            if score >= high_threshold:
-                return BudgetSpec(
-                    budget_level="deep",
-                    time_ms=2500,
-                    max_tokens=1024,
-                    max_parallel=3,
-                    evidence_allowed=True,
-                    max_tool_calls=2,
-                )
-            elif score >= medium_threshold:
-                return BudgetSpec(
-                    budget_level="normal",
-                    time_ms=1000,
-                    max_tokens=512,
-                    max_parallel=1,
-                    evidence_allowed=True,
-                    max_tool_calls=0,
-                )
-            else:
-                return BudgetSpec(
-                    budget_level="tiny",
-                    time_ms=500,
-                    max_tokens=256,
-                    max_parallel=1,
-                    evidence_allowed=False,
-                    max_tool_calls=0,
-                )
-        else:
-            # DIALOGUE 和其他 scene
-            if score >= high_threshold:
-                return BudgetSpec(
-                    budget_level="deep",
-                    time_ms=3000,
-                    max_tokens=1024,
-                    max_parallel=4,
-                    evidence_allowed=True,
-                    max_tool_calls=3,
-                )
-            elif score >= medium_threshold:
-                return BudgetSpec(
-                    budget_level="normal",
-                    time_ms=1500,
-                    max_tokens=512,
-                    max_parallel=2,
-                    evidence_allowed=True,
-                    max_tool_calls=1,
-                )
-            else:
-                return BudgetSpec(
-                    budget_level="tiny",
-                    time_ms=800,
-                    max_tokens=256,
-                    max_parallel=1,
-                    evidence_allowed=False,
-                    max_tool_calls=0,
-                    auto_clarify=True,  # 低分时主动澄清
-                )

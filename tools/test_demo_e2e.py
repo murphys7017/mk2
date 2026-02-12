@@ -49,8 +49,8 @@ def run_demo_with_commands(commands: list[str], timeout: int = 5) -> str:
         raise
 
 
-def test_hello():
-    """测试：发送普通文本"""
+def run_hello_case() -> bool:
+    """运行场景：发送普通文本"""
     print("\n" + "="*70)
     print("测试 1: 发送普通文本 'hello'")
     print("="*70)
@@ -77,8 +77,8 @@ def test_hello():
     return passed == len(checks)
 
 
-def test_alert():
-    """测试：注入告警"""
+def run_alert_case() -> bool:
+    """运行场景：注入告警"""
     print("\n" + "="*70)
     print("测试 2: 注入告警 '/alert drop_burst'")
     print("="*70)
@@ -93,7 +93,7 @@ def test_alert():
     
     passed = 0
     for tag, desc in checks:
-        if tag in output.lower():
+        if tag.lower() in output.lower():
             print(f"  ✅ {tag:20} - {desc}")
             passed += 1
         else:
@@ -103,8 +103,8 @@ def test_alert():
     return passed == len(checks)
 
 
-def test_session_switch():
-    """测试：切换 session"""
+def run_session_switch_case() -> bool:
+    """运行场景：切换 session"""
     print("\n" + "="*70)
     print("测试 3: 切换 session '/session user123'")
     print("="*70)
@@ -128,6 +128,21 @@ def test_session_switch():
     return passed == len(checks)
 
 
+def test_hello():
+    """测试：发送普通文本"""
+    assert run_hello_case()
+
+
+def test_alert():
+    """测试：注入告警"""
+    assert run_alert_case()
+
+
+def test_session_switch():
+    """测试：切换 session"""
+    assert run_session_switch_case()
+
+
 def main():
     print("\n")
     print("╔" + "="*68 + "╗")
@@ -137,19 +152,19 @@ def main():
     results = []
     
     try:
-        results.append(("hello 文本", test_hello()))
+        results.append(("hello 文本", run_hello_case()))
     except Exception as e:
         print(f"❌ 测试异常: {e}")
         results.append(("hello 文本", False))
     
     try:
-        results.append(("Alert 注入", test_alert()))
+        results.append(("Alert 注入", run_alert_case()))
     except Exception as e:
         print(f"❌ 测试异常: {e}")
         results.append(("Alert 注入", False))
     
     try:
-        results.append(("Session 切换", test_session_switch()))
+        results.append(("Session 切换", run_session_switch_case()))
     except Exception as e:
         print(f"❌ 测试异常: {e}")
         results.append(("Session 切换", False))
