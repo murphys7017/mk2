@@ -12,6 +12,9 @@ class PolicyMapper:
             scene = wip.scene or Scene.UNKNOWN
             policy = ctx.config.scene_policy(scene)
             overrides = ctx.config.overrides
+            source_name = getattr(obs, "source_name", "") or ""
+            actor_id = obs.actor.actor_id if getattr(obs, "actor", None) else None
+            is_agent_generated = source_name.startswith("agent:") or actor_id == "agent"
 
             # ========== NEW: User Dialogue UX Safety Valve ==========
             # 防止用户对话消息被沉默 SINK
@@ -69,7 +72,7 @@ class PolicyMapper:
             # 4. deliver_sessions (强制 DELIVER 指定会话)
             deliver_override = False
             if hasattr(overrides, 'deliver_sessions') and overrides.deliver_sessions:
-                if obs.session_key in overrides.deliver_sessions:
+                if (not is_agent_generated) and obs.session_key in overrides.deliver_sessions:
                     wip.action_hint = GateAction.DELIVER
                     wip.model_tier = policy.default_model_tier
                     wip.response_policy = policy.default_response_policy
@@ -78,7 +81,7 @@ class PolicyMapper:
 
             # 5. deliver_actors (强制 DELIVER 指定用户)
             if not deliver_override and hasattr(overrides, 'deliver_actors') and overrides.deliver_actors:
-                if hasattr(obs, 'actor') and obs.actor and obs.actor.actor_id in overrides.deliver_actors:
+                if (not is_agent_generated) and hasattr(obs, 'actor') and obs.actor and obs.actor.actor_id in overrides.deliver_actors:
                     wip.action_hint = GateAction.DELIVER
                     wip.model_tier = policy.default_model_tier
                     wip.response_policy = policy.default_response_policy

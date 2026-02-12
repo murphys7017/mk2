@@ -84,7 +84,7 @@ async def test_core_agent_e2e_user_to_response():
             agent_messages = [
                 obs for obs in state.recent_obs
                 if obs.obs_type == ObservationType.MESSAGE
-                and obs.actor.actor_type == "agent"
+                and obs.source_name.startswith("agent")
                 and obs.payload.text
                 and obs.payload.text.strip()
             ]
@@ -129,7 +129,7 @@ async def test_core_agent_e2e_user_to_response():
             new_agent_messages = [
                 obs for obs in state.recent_obs
                 if obs.obs_type == ObservationType.MESSAGE
-                and obs.actor.actor_type == "agent"
+                and obs.source_name.startswith("agent")
             ]
             if len(new_agent_messages) > initial_agent_count:
                 loop_detected = True
@@ -205,7 +205,7 @@ async def test_core_agent_with_context():
         start_time = asyncio.get_event_loop().time()
         while asyncio.get_event_loop().time() - start_time < max_wait_seconds:
             state = core.get_state(session_key)
-            agent_replies = [obs for obs in state.recent_obs if obs.actor.actor_type == "agent"]
+            agent_replies = [obs for obs in state.recent_obs if obs.source_name.startswith("agent")]
             if agent_replies:
                 break
             await asyncio.sleep(0.1)
@@ -217,7 +217,7 @@ async def test_core_agent_with_context():
         # 验证有 agent 回复
         agent_replies = [
             obs for obs in state.recent_obs
-            if obs.actor.actor_type == "agent"
+            if obs.source_name.startswith("agent")
         ]
         assert len(agent_replies) >= 1, "Should have at least one agent reply"
         
@@ -244,7 +244,7 @@ async def test_core_agent_with_context():
         start_time = asyncio.get_event_loop().time()
         while asyncio.get_event_loop().time() - start_time < max_wait_seconds:
             state = core.get_state(session_key)
-            final_agent_replies = [obs for obs in state.recent_obs if obs.actor.actor_type == "agent"]
+            final_agent_replies = [obs for obs in state.recent_obs if obs.source_name.startswith("agent")]
             if len(final_agent_replies) >= 2:
                 break
             await asyncio.sleep(0.1)

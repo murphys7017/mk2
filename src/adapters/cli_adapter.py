@@ -258,7 +258,7 @@ class CliInputAdapter(BaseAdapter):
                 session_key=session_key,
                 actor=Actor(
                     actor_id="cli",
-                    actor_type="cli",
+                    actor_type="user",
                     display_name="CLI User",
                 ),
                 payload=payload,

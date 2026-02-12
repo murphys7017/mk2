@@ -6,6 +6,7 @@
 import asyncio
 import pytest
 from src.core import Core
+from src.agent.types import AgentOutcome
 from src.adapters.text_input_adapter import TextInputAdapter
 from src.schemas.observation import Observation, ObservationType, Actor, MessagePayload
 
@@ -25,6 +26,11 @@ async def test_core_metrics_and_states():
     # 添加 adapter
     text_adapter = TextInputAdapter(name="text_input", default_session_key="dm:local")
     core.add_adapter(text_adapter)
+
+    async def stub_handle(req):
+        return AgentOutcome(emit=[], trace={}, error=None)
+
+    core.agent_orchestrator.handle = stub_handle
 
     # 启动 Core（后台）
     run_task = asyncio.create_task(core.run_forever())

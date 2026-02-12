@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 
+from src.agent.types import AgentOutcome
 from src.schemas.observation import Actor, MessagePayload, Observation, ObservationType
 from src.core import Core
 
@@ -19,6 +20,11 @@ async def test_session_gc_removes_idle_sessions():
         idle_ttl_seconds=0.2,
         gc_sweep_interval_seconds=0.05,
     )
+
+    async def stub_handle(req):
+        return AgentOutcome(emit=[], trace={}, error=None)
+
+    core.agent_orchestrator.handle = stub_handle
 
     task = asyncio.create_task(core.run_forever())
     await asyncio.sleep(0.05)  # 等 core 启动
@@ -42,6 +48,61 @@ async def test_session_gc_removes_idle_sessions():
     # 断言：回收计数增长（如果你有）
     assert core.metrics.sessions_gc_total >= 1
     
+    await core.shutdown()
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_session_gc_recreates_worker_on_new_message():
+    core = Core(
+        bus_maxsize=100,
+        inbox_maxsize=16,
+        system_session_key="system",
+        message_routing="user",
+        enable_system_fanout=False,
+        enable_session_gc=True,
+        idle_ttl_seconds=0.2,
+        gc_sweep_interval_seconds=0.05,
+    )
+
+    async def stub_handle(req):
+        return AgentOutcome(emit=[], trace={}, error=None)
+
+    core.agent_orchestrator.handle = stub_handle
+
+    task = asyncio.create_task(core.run_forever())
+    await asyncio.sleep(0.05)
+
+    sk = "dm:test"
+    core.bus.publish_nowait(
+        Observation(
+            obs_type=ObservationType.MESSAGE,
+            session_key=sk,
+            actor=Actor(actor_id="u2", actor_type="user"),
+            payload=MessagePayload(text="first"),
+        )
+    )
+
+    await asyncio.sleep(1.0)
+    assert sk not in core._workers
+
+    core.bus.publish_nowait(
+        Observation(
+            obs_type=ObservationType.MESSAGE,
+            session_key=sk,
+            actor=Actor(actor_id="u2", actor_type="user"),
+            payload=MessagePayload(text="second"),
+        )
+    )
+
+    deadline = asyncio.get_event_loop().time() + 1.0
+    while asyncio.get_event_loop().time() < deadline:
+        if core.metrics.processed_by_session.get(sk, 0) >= 2:
+            break
+        await asyncio.sleep(0.05)
+
+    assert core.metrics.processed_by_session.get(sk, 0) >= 2
+
     await core.shutdown()
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)

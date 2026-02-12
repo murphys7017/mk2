@@ -307,18 +307,13 @@ class Core:
 
         方案 A（推荐）：不改 Router，轮询检测。
         """
-        known_sessions: Set[str] = set()
-
         while not self._closing:
             try:
                 current_sessions = set(self.router.list_active_sessions())
 
-                # 检测新增 session
-                new_sessions = current_sessions - known_sessions
-                for session_key in new_sessions:
+                # 对所有活跃 session 都做 ensure，保证 GC 后可自动恢复 worker
+                for session_key in current_sessions:
                     self._ensure_worker(session_key)
-
-                known_sessions = current_sessions
 
                 # 轮询间隔（v0 使用 50ms）
                 await asyncio.sleep(0.05)
@@ -386,6 +381,7 @@ class Core:
             self._workers.pop(session_key, None)
             self._states.pop(session_key, None)
             self.processed_payloads.pop(session_key, None)
+            self.router.remove_session(session_key)
 
             self.metrics.inc_gc(reason)
             logger.info(f"GC session={session_key} reason={reason}")
@@ -394,8 +390,15 @@ class Core:
 
     def _ensure_worker(self, session_key: str) -> None:
         """确保指定 session 有且仅有一个 worker"""
-        if session_key in self._workers:
+        if self._closing:
             return
+
+        existing = self._workers.get(session_key)
+        if existing is not None:
+            if not existing.done():
+                return
+            # 旧 worker 已结束，允许重建
+            self._workers.pop(session_key, None)
 
         task = asyncio.create_task(
             self._session_loop(session_key),
@@ -697,7 +700,9 @@ class Core:
         # ============================================================
         # Step 1: 防止死循环
         # ============================================================
-        if obs.actor.actor_type == "agent":
+        source_name = obs.source_name or ""
+        actor_id = obs.actor.actor_id if obs.actor else None
+        if source_name.startswith("agent:") or actor_id == "agent":
             logger.debug(f"[{session_key}] Skip agent observation to prevent loop")
             return
         

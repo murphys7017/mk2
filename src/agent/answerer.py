@@ -3,6 +3,7 @@ Answerer: 根据请求 + 证据生成回答
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Protocol, Optional, Any, Dict
 
 from .types import AgentRequest, EvidencePack, AnswerDraft, AnswerSpec
@@ -111,7 +112,9 @@ class LLMAnswerer:
         ]
         
         # 调用 LLM
-        answer_text = self._gateway.call(
+        # 避免在事件循环中执行同步网络 I/O
+        answer_text = await asyncio.to_thread(
+            self._gateway.call,
             messages,
             temperature=0.2,
             max_tokens=512,

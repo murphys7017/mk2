@@ -149,6 +149,11 @@ class SessionRouter:
             self._active_sessions.add(session_key)
         return inbox
 
+    def remove_session(self, session_key: str) -> None:
+        """Remove session inbox and mark it inactive."""
+        self._inboxes.pop(session_key, None)
+        self._active_sessions.discard(session_key)
+
     def resolve_session_key(self, obs: Observation) -> str:
         """
         Deterministic session key resolver (v0 policy).
