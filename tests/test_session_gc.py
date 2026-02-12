@@ -30,14 +30,14 @@ async def test_session_gc_removes_idle_sessions():
     )
 
     # 等待消息被处理 + 进入 idle
-    await asyncio.sleep(0.35)  # > idle_ttl
-
-    # 再等一个 sweep
-    await asyncio.sleep(0.1)
+    # idle_ttl_seconds=0.2, gc_sweep_interval_seconds=0.05
+    # 需要：消息处理 + 进入 idle 状态 + GC 扫描
+    # 保守估计：等待 1 秒确保发生
+    await asyncio.sleep(1.0)
 
     # 断言：session 被回收（字段名按你的实现调整）
-    assert sk not in core._states
-    assert sk not in core._workers
+    assert sk not in core._states, f"Session {sk} should be GC'd but still in _states"
+    assert sk not in core._workers, f"Session {sk} should be GC'd but still in _workers"
 
     # 断言：回收计数增长（如果你有）
     assert core.metrics.sessions_gc_total >= 1

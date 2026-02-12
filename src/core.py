@@ -25,10 +25,11 @@ from .schemas.observation import (
 )
 from .adapters.interface.base import BaseAdapter
 from .gate import DefaultGate
-from .gate.types import GateAction, GateContext
+from .gate.types import GateAction, GateContext, GateHint
 from .config_provider import GateConfigProvider
 from .system_reflex import SystemReflexController, ReflexConfig
-from .agent import DefaultAgentOrchestrator, AgentRequest
+from .agent import DefaultAgentOrchestrator
+from .agent.types import AgentRequest
 
 
 logger = logging.getLogger(__name__)
@@ -136,7 +137,7 @@ class Core:
         )
 
         # Agent orchestrator
-        self.agent = DefaultAgentOrchestrator()
+        self.agent_orchestrator = DefaultAgentOrchestrator()
 
         # Session GC 配置
         self.enable_session_gc = enable_session_gc
@@ -460,9 +461,22 @@ class Core:
 
                 outcome = self.gate.handle(obs, gate_ctx)
 
-                # [GATE:OUT] 日志 - 打印决策信息
+                # [GATE:OUT] 日志 - 打印决策信息（增强：包含 hint 信息）
+                hint: Optional[GateHint] = outcome.decision.hint
                 decision_info = {
                     "action": outcome.decision.action.value if hasattr(outcome.decision.action, 'value') else str(outcome.decision.action),
+                    "scene": outcome.decision.scene.value if hasattr(outcome.decision.scene, 'value') else str(outcome.decision.scene),
+                    "score": outcome.decision.score,
+                    "model_tier": hint.model_tier if hint else None,
+                    "response_policy": hint.response_policy if hint else None,
+                    "budget": {
+                        "level": hint.budget.budget_level if hint and hint.budget else None,
+                        "time_ms": hint.budget.time_ms if hint and hint.budget else None,
+                        "max_tokens": hint.budget.max_tokens if hint and hint.budget else None,
+                        "evidence_allowed": hint.budget.evidence_allowed if hint and hint.budget else None,
+                        "max_tool_calls": hint.budget.max_tool_calls if hint and hint.budget else None,
+                    },
+                    "reason_tags": hint.reason_tags if hint else [],
                     "emit_count": len(outcome.emit),
                     "ingest_count": len(outcome.ingest),
                 }
@@ -490,23 +504,7 @@ class Core:
                 }
                 print(f"[DELIVER] {json.dumps(deliver_info, ensure_ascii=False)}")
                 
-                # 调用 agent 处理
-                agent_req = AgentRequest(
-                    obs=obs,
-                    decision=outcome.decision,
-                    state=state,
-                    now=datetime.now(timezone.utc),
-                )
-                agent_resp = self.agent.handle(agent_req)
-                
-                # 发送 agent 的响应
-                for emit_obs in agent_resp.emit:
-                    self.bus.publish_nowait(emit_obs)
-                
-                # 如果 agent 出错，记录日志
-                if not agent_resp.success:
-                    logger.error(f"Agent error in session {session_key}: {agent_resp.error}")
-                
+                # 调用 _handle_observation 来处理（包括调用 Agent）
                 await self._handle_observation(session_key, obs, state, outcome.decision)
 
         except asyncio.CancelledError:
@@ -687,14 +685,62 @@ class Core:
         self, session_key: str, obs: Observation, state: SessionState, decision=None
     ) -> None:
         """
-        处理用户 session 的 observation（v0 版本）。
+        处理用户 session 的 observation
 
-        - decision: GateDecision，用于 demo 可观测性
+        - decision: GateDecision，用于决定是否调用 Agent
         
-        v0 行为：
-        - 记录 debug：若 payload dict 且含 "i" 字段，append 到 processed_payloads[session_key]
-        - 打印日志摘要
+        流程：
+        - 防止死循环：agent 回复的观察不再处理
+        - 当 decision.action == DELIVER && obs.obs_type == MESSAGE 时，调用 Agent
+        - 把 Agent 的返回值 emit 回流到 bus
         """
+        # ============================================================
+        # Step 1: 防止死循环
+        # ============================================================
+        if obs.actor.actor_type == "agent":
+            logger.debug(f"[{session_key}] Skip agent observation to prevent loop")
+            return
+        
+        # ============================================================
+        # Step 2: 调用 Agent（当 DELIVER 且 MESSAGE）
+        # ============================================================
+        if (
+            decision
+            and decision.action == GateAction.DELIVER
+            and obs.obs_type == ObservationType.MESSAGE
+        ):
+            try:
+                logger.debug(f"[{session_key}] Calling Agent for DELIVER decision")
+                
+                # 构造 AgentRequest
+                agent_req = AgentRequest(
+                    obs=obs,
+                    gate_decision=decision,
+                    session_state=state,
+                    now=datetime.now(timezone.utc),
+                )
+                
+                # 调用 agent orchestrator（async）
+                agent_outcome = await self.agent_orchestrator.handle(agent_req)
+                
+                # 将 agent 的 emit 投递回 bus
+                for emit_obs in agent_outcome.emit:
+                    self.bus.publish_nowait(emit_obs)
+                    logger.debug(f"[{session_key}] Agent emit: {emit_obs.source_name}")
+                
+                # 记录 trace 信息
+                if agent_outcome.error:
+                    logger.warning(f"[{session_key}] Agent error: {agent_outcome.error}")
+                else:
+                    elapsed_ms = agent_outcome.trace.get("elapsed_ms", 0)
+                    logger.info(f"[{session_key}] Agent completed in {elapsed_ms:.1f}ms")
+            
+            except Exception as e:
+                logger.error(f"[{session_key}] Agent exception: {e}", exc_info=True)
+        
+        # ============================================================
+        # Step 3: Debug 记录与日志（兼容旧逻辑）
+        # ============================================================
         # Debug 记录：若 payload 是 dict 且含 "i" 字段
         if isinstance(obs.payload, dict) and "i" in obs.payload:
             if session_key not in self.processed_payloads:

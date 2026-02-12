@@ -4,7 +4,7 @@ import pytest
 from typing import cast
 
 from src.input_bus import AsyncInputBus
-from schemas.observation import ObservationType
+from src.schemas.observation import ObservationType
 
 from src.adapters.timer_tick_adapter import TimerTickAdapter
 from src.adapters.text_input_adapter import TextInputAdapter

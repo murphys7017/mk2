@@ -1,5 +1,37 @@
 version: 1
 
+# 新增：预算阈值配置（用于 score-to-budget 映射）
+budget_thresholds:
+  high_score: 0.75      # ≥ 此分数 → deep budget
+  medium_score: 0.50    # ≥ 此分数 → normal budget
+  # < 0.50 → tiny budget
+
+# 预算细节（映射 _select_budget 中的参数）
+budget_profiles:
+  tiny:
+    budget_level: "tiny"
+    time_ms: 500
+    max_tokens: 256
+    max_parallel: 1
+    evidence_allowed: false
+    max_tool_calls: 0
+  
+  normal:
+    budget_level: "normal"
+    time_ms: 1500
+    max_tokens: 512
+    max_parallel: 2
+    evidence_allowed: true
+    max_tool_calls: 1
+  
+  deep:
+    budget_level: "deep"
+    time_ms: 3000
+    max_tokens: 1024
+    max_parallel: 4
+    evidence_allowed: true
+    max_tool_calls: 3
+
 scene_policies:
   dialogue:
     deliver_threshold: 0.75

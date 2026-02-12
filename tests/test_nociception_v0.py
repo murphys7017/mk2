@@ -59,8 +59,13 @@ async def test_pain_aggregation():
             )
             core.bus.publish_nowait(pain)
 
-        # 等待处理
-        await asyncio.sleep(0.3)
+        # 等待处理（用 polling 代替固定 sleep）
+        max_wait = 2.0
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < max_wait:
+            if core.metrics.pain_total >= 3:
+                break
+            await asyncio.sleep(0.05)
 
         # 断言
         assert core.metrics.pain_total == 3, f"Expected 3, got {core.metrics.pain_total}"
@@ -97,8 +102,13 @@ async def test_burst_triggers_cooldown():
             core.bus.publish_nowait(pain)
             await asyncio.sleep(0.01)  # 快速连续
 
-        # 等待处理和触发检测
-        await asyncio.sleep(0.3)
+        # 等待处理和触发检测（用 polling）
+        max_wait = 2.0
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < max_wait:
+            if "a2" in core.adapters_disabled_until or core.metrics.adapters_cooldown_total >= 1:
+                break
+            await asyncio.sleep(0.05)
 
         # 断言 cooldown 被设置
         assert "a2" in core.adapters_disabled_until
@@ -151,8 +161,14 @@ async def test_drop_overload_suppresses_fanout():
         # 处理 tick
         await core._on_system_tick(tick_obs)
 
-        # 等待
-        await asyncio.sleep(0.2)
+        # 等待处理（用 polling）
+        max_wait = 1.0
+        start_time = asyncio.get_event_loop().time()
+        import time
+        while asyncio.get_event_loop().time() - start_time < max_wait:
+            if core.metrics.drops_overload_total >= 1 or core.fanout_disabled_until > time.time() - 1:
+                break
+            await asyncio.sleep(0.05)
 
         # 断言
         assert core.metrics.drops_overload_total >= 1
