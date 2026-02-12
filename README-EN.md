@@ -1,4 +1,4 @@
-# 🧠 Project Overview – A Long-Running Agent System
+﻿# 🧠 Project Overview – A Long-Running Agent System
 
 ## What This Project Is
 
@@ -202,3 +202,10 @@ Not just reactive.
 But structurally resilient.
 
 
+
+---
+
+# 📚 Documentation
+
+- [docs/README.md](docs/README.md) - Documentation index
+- [docs/PROJECT_MODULE_DEEP_DIVE.md](docs/PROJECT_MODULE_DEEP_DIVE.md) - Deep technical walkthrough aligned to current code

@@ -1,4 +1,4 @@
-# 🧠 项目概述 —— 一个长期运行的类生命体 Agent 系统
+﻿# 🧠 项目概述 —— 一个长期运行的类生命体 Agent 系统
 
 ## 这不是一个简单的对话机器人
 
@@ -193,8 +193,8 @@ Gate 使用 YAML 配置驱动：
 
 详细文档请查阅 `docs/` 目录：
 
-* [ARCHITECTURE.md](docs/ARCHITECTURE.md) - 系统架构详解
-* [DEPLOYMENT.md](docs/DEPLOYMENT.md) - 部署指南
+* [docs/README.md](docs/README.md) - 文档总入口（先看这里）
+* [PROJECT_MODULE_DEEP_DIVE.md](docs/PROJECT_MODULE_DEEP_DIVE.md) - 当前代码对齐的模块深潜文档
 * [DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md) - 设计决策记录
 
 ---

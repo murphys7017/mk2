@@ -281,8 +281,11 @@ class GateConfig:
 
         for level, base in default_profiles.items():
             raw = raw_profiles.get(level, {}) or {}
+            budget_level_val = raw.get("budget_level", base.budget_level)
+            if isinstance(budget_level_val, str):
+                budget_level_val = budget_level_val.strip().lower()
             parsed_profiles[level] = BudgetProfileConfig(
-                budget_level=str(raw.get("budget_level", base.budget_level)),
+                budget_level=budget_level_val,  # type: ignore
                 time_ms=int(raw.get("time_ms", base.time_ms)),
                 max_tokens=int(raw.get("max_tokens", base.max_tokens)),
                 max_parallel=int(raw.get("max_parallel", base.max_parallel)),
