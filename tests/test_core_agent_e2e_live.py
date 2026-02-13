@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-import logging
 from datetime import datetime, timezone
+from loguru import logger
 
 import pytest
 
@@ -18,9 +18,6 @@ from src.schemas.observation import (
     Actor,
     MessagePayload,
 )
-
-
-logger = logging.getLogger(__name__)
 
 
 # 集成测试开关：只有设置 RUN_LLM_LIVE_TESTS=1 才执行

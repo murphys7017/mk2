@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
+from loguru import logger
 
 from .input_bus import AsyncInputBus
 from .session_router import SessionRouter, SessionInbox
@@ -30,9 +30,6 @@ from .config_provider import GateConfigProvider
 from .system_reflex import SystemReflexController, ReflexConfig
 from .agent import DefaultAgentOrchestrator
 from .agent.types import AgentRequest
-
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -437,7 +434,7 @@ class Core:
                     "actor_id": obs.actor.actor_id if obs.actor else None,
                     "timestamp": obs.timestamp.isoformat() if obs.timestamp else None,
                 }
-                print(f"[WORKER:IN] {json.dumps(obs_info, ensure_ascii=False)}")
+                logger.debug(f"[WORKER:IN] {json.dumps(obs_info, ensure_ascii=False)}")
                 
                 # 记录到 state 并更新 metrics
                 state.record(obs)
@@ -461,7 +458,7 @@ class Core:
                     "session_key": session_key,
                     "state_processed": state.processed_total if state else 0,
                 }
-                print(f"[GATE:CTX] {json.dumps(ctx_info, ensure_ascii=False)}")
+                logger.debug(f"[GATE:CTX] {json.dumps(ctx_info, ensure_ascii=False)}")
 
                 outcome = self.gate.handle(obs, gate_ctx)
 
@@ -484,7 +481,7 @@ class Core:
                     "emit_count": len(outcome.emit),
                     "ingest_count": len(outcome.ingest),
                 }
-                print(f"[GATE:OUT] {json.dumps(decision_info, ensure_ascii=False)}")
+                logger.debug(f"[GATE:OUT] {json.dumps(decision_info, ensure_ascii=False)}")
 
                 # 1) emit
                 for emit_obs in outcome.emit:
@@ -506,7 +503,7 @@ class Core:
                     "session_key": session_key,
                     "action": outcome.decision.action.value if hasattr(outcome.decision.action, 'value') else str(outcome.decision.action),
                 }
-                print(f"[DELIVER] {json.dumps(deliver_info, ensure_ascii=False)}")
+                logger.debug(f"[DELIVER] {json.dumps(deliver_info, ensure_ascii=False)}")
                 
                 # 调用 _handle_observation 来处理（包括调用 Agent）
                 await self._handle_observation(session_key, obs, state, outcome.decision)
@@ -555,7 +552,7 @@ class Core:
         elif obs.obs_type == ObservationType.SCHEDULE:
             await self._on_system_tick(obs)
         else:
-            logger.info(
+            logger.debug(
                 f"[SYSTEM] obs_type={obs.obs_type.value}, "
                 f"source={obs.source_name}, "
                 f"actor={obs.actor.actor_id}"
@@ -609,7 +606,7 @@ class Core:
                 from .nociception import FANOUT_SUPPRESS_SECONDS
                 self.fanout_disabled_until = now + FANOUT_SUPPRESS_SECONDS
 
-        logger.info(f"Pain recorded: {source_key} severity={severity} count={len(timestamps)}")
+        logger.debug(f"Pain recorded: {source_key} severity={severity} count={len(timestamps)}")
 
     async def _on_system_tick(self, obs: Observation) -> None:
         """处理系统 tick（SCHEDULE）：drop 采样、fanout 抑制"""
@@ -739,10 +736,10 @@ class Core:
                     logger.warning(f"[{session_key}] Agent error: {agent_outcome.error}")
                 else:
                     elapsed_ms = agent_outcome.trace.get("elapsed_ms", 0)
-                    logger.info(f"[{session_key}] Agent completed in {elapsed_ms:.1f}ms")
+                    logger.debug(f"[{session_key}] Agent completed in {elapsed_ms:.1f}ms")
             
             except Exception as e:
-                logger.error(f"[{session_key}] Agent exception: {e}", exc_info=True)
+                logger.exception(f"[{session_key}] Agent exception: {e}")
         
         # ============================================================
         # Step 3: Debug 记录与日志（兼容旧逻辑）
@@ -758,7 +755,7 @@ class Core:
         idle_sec = state.idle_seconds()
         idle_str = f", idle={idle_sec:.1f}s" if idle_sec is not None else ""
 
-        logger.info(
+        logger.debug(
             f"[{session_key}] obs_type={obs.obs_type.value}, "
             f"actor={obs.actor.actor_id}, "
             f"processed={state.processed_total}"

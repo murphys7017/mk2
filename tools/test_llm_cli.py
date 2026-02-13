@@ -5,7 +5,14 @@ import argparse
 import os
 import re
 import sys
+from pathlib import Path
 from typing import Any, Dict, List
+
+# Allow running this script directly from repository root:
+# `python tools/test_llm_cli.py ...`
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.llm import LLMConfig, LLMGateway
 

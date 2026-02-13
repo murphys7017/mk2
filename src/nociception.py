@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Literal
-import logging
+from loguru import logger
 
 from .schemas.observation import (
     Observation,
@@ -17,8 +17,6 @@ from .schemas.observation import (
     AlertPayload,
     SourceKind,
 )
-
-logger = logging.getLogger(__name__)
 
 
 # ============================================================

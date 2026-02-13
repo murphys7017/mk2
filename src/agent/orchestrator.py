@@ -3,9 +3,9 @@ DefaultAgentOrchestrator: Agent 编排器（MVP v2）
 """
 from __future__ import annotations
 
-import logging
 import time
 from typing import Optional, Any, Dict
+from loguru import logger
 
 from .types import AgentRequest, AgentOutcome
 from .planner import Planner, RulePlanner
@@ -13,9 +13,6 @@ from .evidence import EvidenceRunner, StubEvidenceRunner
 from .answerer import Answerer, LLMAnswerer
 from .speaker import Speaker, DefaultSpeaker
 from .post import PostProcessor, NoopPostProcessor
-
-
-logger = logging.getLogger(__name__)
 
 
 class DefaultAgentOrchestrator:
@@ -35,7 +32,7 @@ class DefaultAgentOrchestrator:
         answerer: Optional[Answerer] = None,
         speaker: Optional[Speaker] = None,
         post_processor: Optional[PostProcessor] = None,
-        logger_instance: Optional[logging.Logger] = None,
+        logger_instance: Optional[Any] = None,
         llm_provider: str = "bailian",
         llm_model: str = "qwen-max",
         llm_config_path: str = "config/llm.yaml",
@@ -172,7 +169,7 @@ class DefaultAgentOrchestrator:
             trace["end_ts"] = time.time()
             trace["elapsed_ms"] = (trace["end_ts"] - trace["start_ts"]) * 1000
             
-            self.logger.info(
+            self.logger.debug(
                 f"[Orchestrator] Complete in {trace['elapsed_ms']:.1f}ms, "
                 f"emit {len(emit_msgs) + len(emit_post)} obs"
             )
@@ -185,7 +182,7 @@ class DefaultAgentOrchestrator:
         
         except Exception as e:
             # 捕获任何未预期的异常
-            self.logger.error(f"[Orchestrator] Unexpected error: {e}", exc_info=True)
+            self.logger.exception(f"[Orchestrator] Unexpected error: {e}")
             return self._fallback_outcome(
                 req=req,
                 trace=trace,

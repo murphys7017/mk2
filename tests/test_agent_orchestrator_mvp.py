@@ -4,8 +4,9 @@ AgentOrchestrator MVP 单测
 from __future__ import annotations
 
 import asyncio
-import logging
+import sys
 from datetime import datetime, timezone
+from loguru import logger
 
 import pytest
 
@@ -23,8 +24,9 @@ from src.schemas.observation import (
 )
 
 
-# 配置单测日志
-logging.basicConfig(level=logging.DEBUG)
+# 配置 loguru 日志
+logger.remove()
+logger.add(sys.stderr, level="DEBUG")
 
 
 @pytest.fixture

@@ -1,21 +1,21 @@
 import asyncio
-import logging
 import signal
 import sys
+from loguru import logger
 
 from src.core import Core
 from src.adapters.text_input_adapter import TextInputAdapter
 from src.adapters.timer_tick_adapter import TimerTickAdapter
 
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
+# 配置 loguru 日志
+logger.remove()
+logger.add(
+    sys.stderr,
+    level="INFO",
+    format="<green>{time:HH:mm:ss}</green> [<level>{level}</level>] <cyan>{name}</cyan>: <level>{message}</level>",
+    colorize=True,
 )
-
-logger = logging.getLogger(__name__)
 
 
 async def main():

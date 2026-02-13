@@ -12,6 +12,7 @@
 - `docs/ROADMAP.md`：路线图（建议持续更新）。
 - `docs/DEPLOYMENT.md`：部署/运行说明（建议持续更新）。
 - `docs/demo_e2e.md`：CLI E2E 演示与调试文档。
+- `docs/logging.md`：全项目统一日志策略与级别约定。
 - `docs/REPO_AUDIT_TODO.md`：本轮工程审计与修复跟踪。
 
 ## Archived (Historical / Duplicate / Prompt Artifacts)

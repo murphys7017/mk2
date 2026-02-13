@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 from pathlib import Path
 from typing import Optional, Tuple
+from loguru import logger
 
 from .gate.config import GateConfig
-
-logger = logging.getLogger(__name__)
 
 
 class GateConfigProvider:
