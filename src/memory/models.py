@@ -8,14 +8,18 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Optional, Self, Literal
+from abc import ABC, abstractmethod
 
 if TYPE_CHECKING:
     from src.schemas.observation import Observation
+
+MemoryScope = Literal["global", "user", "session", "episodic", "kb"]
 
 
 # =============================================================================
@@ -301,10 +305,10 @@ class MemoryItem(SerializableMixin):
     """
     记忆条目（Memory Item）
     
-    存储结构化的记忆信息（persona, user_profile, session, episodic 等）
+    存储结构化的记忆信息（global, user, session, episodic, kb）
     Store structured memory information
     """
-    scope: str          # persona / user / session / episodic / global
+    scope: MemoryScope  # global / user / session / episodic / kb
     kind: str           # fact / preference / goal / constraint / note ...
     key: str            # 唯一标识 / unique identifier
     content: str        # 文本描述 / text description
@@ -347,6 +351,7 @@ class ContextPack(SerializableMixin):
     user_profile: list[MemoryItem] = field(default_factory=list)
     session_items: list[MemoryItem] = field(default_factory=list)
     episodic_items: list[MemoryItem] = field(default_factory=list)
+    retrieved_items: list[MemoryItem] = field(default_factory=list)
     recent_events: list[EventRecord] = field(default_factory=list)
     recent_turns: list[TurnRecord] = field(default_factory=list)
     schema_version: int = 1
@@ -358,7 +363,13 @@ class ContextPack(SerializableMixin):
         Custom field deserialization logic
         """
         # 处理 MemoryItem 列表
-        if field_name in ("persona", "user_profile", "session_items", "episodic_items"):
+        if field_name in (
+            "persona",
+            "user_profile",
+            "session_items",
+            "episodic_items",
+            "retrieved_items",
+        ):
             if isinstance(value, list):
                 return [
                     MemoryItem.from_dict(item) if isinstance(item, dict) else item

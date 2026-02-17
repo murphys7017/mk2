@@ -1,0 +1,101 @@
+# config/memory.yaml
+# Memory 子系统配置
+
+# 数据库配置（事件和对话轮次的权威源）
+database:
+  # 支持 MySQL 和 SQLite
+  # MySQL: mysql+pymysql://user:password@host:3306/dbname
+  # SQLite: sqlite:///./memory.db
+  # SQLite 内存: sqlite:///:memory:
+  dsn: "<MYSQL_DSN>"
+  
+  # 连接池设置
+  pool_size: 10
+  max_overflow: 20
+
+# Markdown Vault 配置（用户信息/设定/经历的权威源）
+vault:
+  root_path: "memory_vault"
+  
+  # 目录结构
+  structure:
+    global: "global/"           # 系统级 persona
+    user: "users/"              # 用户画像
+    episodic: "episodic/"       # 用户经历
+    kb: "kb/"                   # 知识库
+    session: "sessions/"        # 会话摘要
+
+# 向量索引配置（派生索引）
+vector:
+  # enabled: 是否启用向量索引
+  enabled: false
+  
+  # 向量库类型
+  # 支持: memory, qdrant, milvus, weaviate, pgvector
+  type: "memory"
+  
+  # Embedding 提供者配置
+  embedding:
+    # 类型: openai, huggingface, deterministic (for testing)
+    type: "deterministic"
+    
+    # OpenAI 配置
+    openai:
+      api_key: "<OPENAI_API_KEY>"
+      model: "text-embedding-3-small"
+      dimension: 1536
+    
+    # HuggingFace 配置
+    huggingface:
+      model: "sentence-transformers/all-MiniLM-L6-v2"
+      dimension: 384
+    
+    # Deterministic (用于测试，不需要 API)
+    deterministic:
+      dimension: 128
+  
+  # Qdrant 配置（可选）
+  qdrant:
+    url: "<QDRANT_URL>"
+    api_key: "<QDRANT_API_KEY>"
+    collection_name: "memory_items"
+  
+  # Milvus 配置（可选）
+  milvus:
+    host: "<MILVUS_HOST>"
+    port: 19530
+    collection_name: "memory_items"
+  
+  # PgVector 配置（可选）
+  pgvector:
+    # 使用 database.dsn 中的 PostgreSQL
+    table_name: "memory_vectors"
+
+# 索引策略
+indexing:
+  # 自动索引 scope 类型
+  auto_index_scopes:
+    - global
+    - user
+    - episodic
+    - kb
+  
+  # 后台重建周期（秒）
+  reindex_interval: 3600
+  
+  # 批处理大小
+  batch_size: 100
+
+# 搜索配置
+search:
+  # 默认返回数量
+  default_topk: 10
+  
+  # 向量搜索权重（与关键词搜索混合）
+  vector_weight: 0.7
+  keyword_weight: 0.3
+
+# 日志配置
+logging:
+  level: INFO
+  format: "[%(asctime)s] %(name)s - %(levelname)s - %(message)s"

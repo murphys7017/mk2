@@ -10,19 +10,25 @@ from .models import (
     EventRecord,
     TurnRecord,
     MemoryItem,
+    MemoryScope,
     ContextPack,
     SerializableMixin,
 )
-from .stores import (
-    EventStore,
-    TurnStore,
-    MemoryStore,
+from .vault import (
+    MarkdownItemStore,
+    MarkdownVaultError,
 )
-from .backend import (
-    StorageBackend,
+from .service import MemoryService
+from .config import (
+    MemoryConfig,
+    MemoryConfigProvider,
 )
-from .service import (
-    MemoryService,
+from .backends import (
+    SQLAlchemyBackend,
+    VectorIndex,
+    EmbeddingProvider,
+    InMemoryVectorIndex,
+    DeterministicEmbeddingProvider,
 )
 
 __all__ = [
@@ -30,14 +36,22 @@ __all__ = [
     "EventRecord",
     "TurnRecord",
     "MemoryItem",
+    "MemoryScope",
     "ContextPack",
     "SerializableMixin",
-    # Stores
-    "EventStore",
-    "TurnStore",
-    "MemoryStore",
-    # Backend
-    "StorageBackend",
+    # Vault
+    "MarkdownItemStore",
+    "MarkdownVaultError",
     # Service
     "MemoryService",
+    # Config
+    "MemoryConfig",
+    "MemoryConfigProvider",
+    # Backends
+    "SQLAlchemyBackend",
+    "VectorIndex",
+    "EmbeddingProvider",
+    "InMemoryVectorIndex",
+    "DeterministicEmbeddingProvider",
 ]
+
