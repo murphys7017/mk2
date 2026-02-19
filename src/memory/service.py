@@ -10,12 +10,12 @@ import time
 import logging
 from typing import TYPE_CHECKING, Optional
 
-from .models import ContextPack, EventRecord, MemoryItem, TurnRecord, MemoryScope
+from .models import ContextPack, EventRecord, MemoryItem, TurnRecord
 from .vault import MarkdownItemStore
 
 if TYPE_CHECKING:
     from src.schemas.observation import Observation
-    from .backends.relational import RelationalBackend
+    from .backends.relational import SQLAlchemyBackend
     from .backends.vector import VectorIndex, EmbeddingProvider
 
 logger = logging.getLogger(__name__)
@@ -31,17 +31,16 @@ class MemoryService:
     
     def __init__(
         self,
-        db_backend: RelationalBackend,
+        db_backend: SQLAlchemyBackend,
         markdown_vault_path: str = "memory_vault",
         vector_index: Optional[VectorIndex] = None,
         embedding_provider: Optional[EmbeddingProvider] = None,
     ):
         """初始化记忆服务"""
-        self.db_backend: RelationalBackend = db_backend
+        self.db_backend = db_backend
         self.markdown_store = MarkdownItemStore(markdown_vault_path)
         self.vector_index = vector_index
-        if self.vector_index and embedding_provider and hasattr(self.vector_index, "embedding_provider"):
-            self.vector_index.embedding_provider = embedding_provider
+        self.embedding_provider = embedding_provider
         self.db_backend.initialize()
         logger.info("MemoryService initialized")
     
@@ -188,17 +187,19 @@ class MemoryService:
         turn_dicts = self.db_backend.list_turns_by_session(session_key, limit=limit)
         turns = []
         for turn_dict in turn_dicts:
-            # 反序列化 JSON 字段（总是删除这些字段）
-            if 'plan_json' in turn_dict:
-                plan_json = turn_dict.pop('plan_json')
-                if plan_json:
-                    turn_dict['plan'] = json.loads(plan_json)
+            # 反序列化 JSON 字段
+            if 'plan_json' in turn_dict and turn_dict['plan_json']:
+                turn_dict['plan'] = json.loads(turn_dict['plan_json'])
+                del turn_dict['plan_json']
             if 'tool_calls_json' in turn_dict:
-                turn_dict['tool_calls'] = json.loads(turn_dict.pop('tool_calls_json'))
+                turn_dict['tool_calls'] = json.loads(turn_dict['tool_calls_json'])
+                del turn_dict['tool_calls_json']
             if 'tool_results_json' in turn_dict:
-                turn_dict['tool_results'] = json.loads(turn_dict.pop('tool_results_json'))
+                turn_dict['tool_results'] = json.loads(turn_dict['tool_results_json'])
+                del turn_dict['tool_results_json']
             if 'meta_json' in turn_dict:
-                turn_dict['meta'] = json.loads(turn_dict.pop('meta_json'))
+                turn_dict['meta'] = json.loads(turn_dict['meta_json'])
+                del turn_dict['meta_json']
             turns.append(TurnRecord.from_dict(turn_dict))
         return turns
     
@@ -206,20 +207,20 @@ class MemoryService:
     
     def get_items(
         self,
-        scope: MemoryScope,
+        scope: str,
         kind: Optional[str] = None,
     ) -> list[MemoryItem]:
         """获取指定 scope 的记忆条目"""
         return self.markdown_store.list(scope, kind)
     
-    def get_item(self, scope: MemoryScope, kind: str, key: str) -> Optional[MemoryItem]:
+    def get_item(self, scope: str, kind: str, key: str) -> Optional[MemoryItem]:
         """获取单个记忆条目"""
         return self.markdown_store.get(scope, kind, key)
     
     def upsert_item(self, item: MemoryItem) -> None:
         """新增或更新记忆条目"""
         self.markdown_store.upsert(item)
-        if self.vector_index:
+        if self.vector_index and self.embedding_provider:
             self._index_item(item)
         logger.debug(f"Item upserted: {item.scope}/{item.kind}/{item.key}")
     
@@ -228,7 +229,7 @@ class MemoryService:
         for item in items:
             self.upsert_item(item)
     
-    def delete_item(self, scope: MemoryScope, kind: str, key: str) -> bool:
+    def delete_item(self, scope: str, kind: str, key: str) -> bool:
         """删除记忆条目"""
         result = self.markdown_store.delete(scope, kind, key)
         if self.vector_index:
@@ -239,11 +240,11 @@ class MemoryService:
     def search_items(
         self,
         query: str,
-        scope: Optional[MemoryScope] = None,
+        scope: Optional[str] = None,
         topk: int = 10,
     ) -> list[MemoryItem]:
         """搜索记忆条目"""
-        if self.vector_index:
+        if self.vector_index and self.embedding_provider:
             return self._search_by_vector(query, scope, topk)
         else:
             return self.markdown_store.search_text(query, scope)[:topk]
@@ -297,7 +298,7 @@ class MemoryService:
     
     def reindex_all_items(self) -> int:
         """重建所有项的向量索引"""
-        if not self.vector_index:
+        if not self.vector_index or not self.embedding_provider:
             logger.warning("Vector index not available, skipping reindex")
             return 0
         
@@ -319,22 +320,24 @@ class MemoryService:
         turn_dict = self.db_backend.get_turn_dict(turn_id)
         if not turn_dict:
             return None
-        # 反序列化 JSON 字段（总是删除这些字段）
-        if 'plan_json' in turn_dict:
-            plan_json = turn_dict.pop('plan_json')
-            if plan_json:
-                turn_dict['plan'] = json.loads(plan_json)
+        # 反序列化 JSON 字段
+        if 'plan_json' in turn_dict and turn_dict['plan_json']:
+            turn_dict['plan'] = json.loads(turn_dict['plan_json'])
+            del turn_dict['plan_json']
         if 'tool_calls_json' in turn_dict:
-            turn_dict['tool_calls'] = json.loads(turn_dict.pop('tool_calls_json'))
+            turn_dict['tool_calls'] = json.loads(turn_dict['tool_calls_json'])
+            del turn_dict['tool_calls_json']
         if 'tool_results_json' in turn_dict:
-            turn_dict['tool_results'] = json.loads(turn_dict.pop('tool_results_json'))
+            turn_dict['tool_results'] = json.loads(turn_dict['tool_results_json'])
+            del turn_dict['tool_results_json']
         if 'meta_json' in turn_dict:
-            turn_dict['meta'] = json.loads(turn_dict.pop('meta_json'))
+            turn_dict['meta'] = json.loads(turn_dict['meta_json'])
+            del turn_dict['meta_json']
         return TurnRecord.from_dict(turn_dict)
     
     def _index_item(self, item: MemoryItem) -> None:
         """为单个项建立向量索引"""
-        if not self.vector_index:
+        if not self.vector_index or not self.embedding_provider:
             return
         
         item_id = f"{item.scope}/{item.kind}/{item.key}"
@@ -350,7 +353,7 @@ class MemoryService:
     def _search_by_vector(
         self,
         query: str,
-        scope: Optional[MemoryScope] = None,
+        scope: Optional[str] = None,
         topk: int = 10,
     ) -> list[MemoryItem]:
         """使用向量搜索"""
