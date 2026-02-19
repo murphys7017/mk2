@@ -126,7 +126,7 @@ Adapter
 → SessionWorker
 → Gate（脑干）
 → Agent（认知）
-→ Tool（未来扩展）
+→ 后处理（未来扩展）
 → Observation 回流
 → System Reflex（自主神经）
 ```
