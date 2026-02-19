@@ -348,12 +348,12 @@ Agent 编排顺序：
 
 建议命令：
 - 离线主回归：
-  - `uv run pytest -p no:cacheprovider -m "not integration" -q`
+  - `uv run pytest -m "not integration" -q`
 - 在线 LLM 用例：
-  - `RUN_LLM_LIVE_TESTS=1`
-  - `uv run pytest -p no:cacheprovider -m integration -q`
+  - `$env:RUN_LLM_LIVE_TESTS="1"`（PowerShell）
+  - `uv run pytest -m integration -q`
 - Gate 热加载与 GC 定向：
-  - `uv run pytest -p no:cacheprovider tests/test_gate_config_hot_reload.py tests/test_session_gc.py -q`
+  - `uv run pytest tests/test_gate_config_hot_reload.py tests/test_session_gc.py -q`
 
 ---
 

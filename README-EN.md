@@ -1,211 +1,61 @@
-﻿# 🧠 Project Overview – A Long-Running Agent System
+﻿# MK2
 
-## What This Project Is
+A long-running, multi-session, self-protecting event-driven agent system.
 
-This project is **not just a conversational AI wrapper**.
+## 1. Current Capabilities
 
-It is a **long-running, multi-session, self-regulating agent system** designed with biological metaphors:
+1. Main pipeline: `Adapter -> Bus -> Router -> Worker -> Gate -> Agent -> emit -> Bus`
+2. Gate: deterministic routing (`DROP / SINK / DELIVER`) with budget controls
+3. System Reflex: runtime self-regulation based on nociception signals
+4. Memory: integrated into Core (event/turn persistence, enabled by default, fail-open)
+5. Testing: offline/integration layered strategy
 
-> Perception → Reflex → Cognition → Action → Feedback → Self-Regulation
+## 2. Quick Start
 
-The goal is to build an agent that can:
+```bash
+# Install deps
+uv sync
 
-* Run continuously
-* Handle multiple sessions concurrently
-* Protect itself under overload
-* Degrade gracefully
-* Recover automatically
-* Support tool and model hierarchy
-* Remain observable and controllable at runtime
+# Run offline baseline tests
+uv run pytest -m "not integration" -q
 
----
-
-# 🏗 System Architecture Overview
-
-The system is organized into **three structural layers**, inspired by biological systems.
-
----
-
-## 1️⃣ Brainstem Layer (Gate) — Reflex & Protection
-
-This layer is fully implemented.
-
-### Responsibilities
-
-* Scene classification
-* Scoring & routing
-* Deduplication
-* Rate control
-* Overload protection
-* Drop / Sink / Deliver decision
-* Runtime overrides (emergency mode, forced low model)
-
-### Key Properties
-
-* Deterministic
-* Rule-based
-* Fast
-* Config-driven (YAML)
-* Hot-reloadable
-* No LLM involved
-
-The Gate acts as a **reflex system**, not a reasoning engine.
-
----
-
-## 2️⃣ Cognitive Layer (Agent) — Intelligence & Planning
-
-This layer is entering active development.
-
-### Planned Responsibilities
-
-* Intent judgment
-* Planning
-* Memory management
-* Tool decision
-* Multi-model strategy
-* Structured response generation
-
-The Agent only receives inputs that pass the Gate.
-
-It does not decide whether to respond — only *how* to respond.
-
----
-
-## 3️⃣ Autonomic Layer (System Reflex)
-
-This layer enables self-regulation.
-
-### Closed Loop Implemented
-
-```
-Gate emits ALERT
-→ System session aggregates signals
-→ Reflex controller evaluates health
-→ Overrides updated
-→ Gate behavior changes
-→ CONTROL event broadcast
+# Start app
+uv run python main.py
 ```
 
-### Current Capabilities
+## 3. Test Commands
 
-* Emergency mode activation
-* Forced low-model mode
-* Drop burst detection
-* TTL-based temporary tuning
-* Agent tuning suggestions (whitelisted, safe, time-bound)
-* Automatic recovery
+```bash
+# Full suite (includes integration)
+uv run pytest -q
 
-### Design Principles
+# Offline only
+uv run pytest -m "not integration" -q
 
-* No LLM involvement
-* No heavy reasoning
-* Pure rule-based reflex
-* Observable transitions
-* Safe override boundaries
-
----
-
-# 🔄 Runtime Flow
-
-```
-Adapter
-→ Observation
-→ InputBus
-→ SessionRouter
-→ SessionWorker
-→ Gate (Brainstem)
-→ Agent (Cognition)
-→ Tool (future)
-→ Observation feedback
-→ System Reflex (Autonomic)
+# Integration only (real external deps)
+uv run pytest -m integration -q
 ```
 
-All state transitions occur via structured Observations.
+Notes:
+1. LLM provider live tests in `integration` are gated by `RUN_LLM_LIVE_TESTS=1`.
+2. Use `uv run pytest -q -rs` to see skip reasons.
 
-There are no hidden side channels.
+## 4. Config Files
 
----
+1. `config/gate.yaml`
+2. `config/llm.yaml`
+3. `config/memory.yaml`
 
-# 🔧 Configuration System
+Use environment variables for secrets; avoid committing plaintext keys.
 
-The Gate is configured via YAML:
+## 5. Documentation Entry
 
-* Scene policies
-* Scoring weights
-* Dedup windows
-* Drop escalation rules
-* Runtime overrides
+1. `docs/README.md` (documentation index)
+2. `docs/DEPLOYMENT.md` (deploy/run guide)
+3. `docs/TESTING.md` (testing strategy)
+4. `docs/MEMORY.md` (current memory implementation)
+5. `docs/PROJECT_MODULE_DEEP_DIVE.md` (deep technical walkthrough)
 
-Configuration supports:
+## 6. Historical Docs
 
-* Default fallback
-* Strong typing
-* Hot reload with snapshot replacement
-* Runtime modification via system reflex
-
----
-
-# 🛡 Runtime Safety Model
-
-The system enforces strict boundaries:
-
-* Gate never calls Agent
-* Agent cannot directly modify Gate
-* Agent may only suggest tuning
-* System reflex is the sole authority for override execution
-* All changes emit observable events
-
-This prevents unstable feedback loops.
-
----
-
-# 📈 Current Completion Stage
-
-Completed:
-
-* Input pipeline
-* Multi-session routing
-* Gate reflex system
-* YAML configuration + hot reload
-* Runtime overrides
-* System reflex controller
-* Agent notification mechanism
-* Agent tuning suggestion mechanism
-
-Stable closed loop exists from input to self-regulation.
-
----
-
-# 🚀 Next Phase: Cognitive Expansion
-
-Focus shifts toward:
-
-* Agent planning architecture
-* Memory refinement
-* Tool registry and execution layer
-* Tool result reintegration through Gate
-
-The structural foundation is complete.
-
----
-
-# 🎯 Final Vision
-
-This project aims to evolve into:
-
-> A self-protecting, long-running agent system
-> that can reason, act, adapt, and survive under dynamic conditions.
-
-Not just intelligent.
-Not just reactive.
-But structurally resilient.
-
-
-
----
-
-# 📚 Documentation
-
-- [docs/README.md](docs/README.md) - Documentation index
-- [docs/PROJECT_MODULE_DEEP_DIVE.md](docs/PROJECT_MODULE_DEEP_DIVE.md) - Deep technical walkthrough aligned to current code
+Legacy and phase-specific documents are archived under `docs/archive/`.
