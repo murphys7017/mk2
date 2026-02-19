@@ -283,7 +283,11 @@ class SQLAlchemyBackend:
                 poolclass=StaticPool,
             )
         else:
-            engine_kwargs: dict[str, Any] = {"pool_pre_ping": True}
+            engine_kwargs: dict[str, Any] = {
+                "pool_pre_ping": True,
+                # 添加连接超时（避免阻塞 Core 启动）
+                "connect_args": {"connect_timeout": 2} if dsn.startswith("mysql") else {},
+            }
             if not dsn.startswith("sqlite"):
                 if pool_size is not None:
                     engine_kwargs["pool_size"] = pool_size

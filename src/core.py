@@ -10,7 +10,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, TYPE_CHECKING
 from loguru import logger
 
 from .input_bus import AsyncInputBus
@@ -30,6 +30,9 @@ from .config_provider import GateConfigProvider
 from .system_reflex import SystemReflexController, ReflexConfig
 from .agent import DefaultAgentOrchestrator
 from .agent.types import AgentRequest
+
+if TYPE_CHECKING:
+    from .memory.service import MemoryService
 
 
 @dataclass
@@ -100,6 +103,9 @@ class Core:
         gate: Optional[DefaultGate] = None,
         gate_config_provider: Optional[GateConfigProvider] = None,
         agent_orchestrator: Optional[DefaultAgentOrchestrator] = None,
+        enable_memory: bool = True,
+        memory_config_path: str = "config/memory.yaml",
+        memory_service: Optional[MemoryService] = None,
     ) -> None:
         """
         参数：
@@ -136,6 +142,9 @@ class Core:
 
         # Agent orchestrator
         self.agent_orchestrator = agent_orchestrator or DefaultAgentOrchestrator()
+        self.memory_service = memory_service
+        if self.memory_service is None and enable_memory:
+            self.memory_service = self._init_default_memory_service(memory_config_path)
 
         # Session GC 配置
         self.enable_session_gc = enable_session_gc
@@ -293,6 +302,14 @@ class Core:
             await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
             logger.info(f"Cancelled {len(tasks_to_cancel)} tasks")
 
+        # 5. 关闭 memory（可选）
+        if self.memory_service is not None:
+            try:
+                self.memory_service.close()
+                logger.info("Memory service closed")
+            except Exception as e:
+                logger.warning(f"Error closing memory service: {e}")
+
         logger.info("Core shutdown complete")
 
     # -------------------------
@@ -406,6 +423,49 @@ class Core:
         self._worker_stats[session_key] = 0
         logger.info(f"Started worker for session: {session_key}")
 
+    def _init_default_memory_service(self, memory_config_path: str) -> Optional["MemoryService"]:
+        """默认初始化 memory service（失败降级，不影响 Core 启动）。
+        
+        使用超时控制避免 DB 连接阻塞 Core 启动（最多阻塞 3 秒）。
+        """
+        import concurrent.futures
+        
+        def _do_init():
+            from .memory.config import MemoryConfigProvider
+            from .memory.backends.relational import SQLAlchemyBackend
+            from .memory.service import MemoryService
+
+            cfg = MemoryConfigProvider(memory_config_path).snapshot()
+            db_backend = SQLAlchemyBackend(
+                cfg.database.dsn,
+                pool_size=cfg.database.pool_size,
+                max_overflow=cfg.database.max_overflow,
+            )
+            service = MemoryService(
+                db_backend=db_backend,
+                markdown_vault_path=cfg.vault.root_path,
+                failed_events_max_in_memory=cfg.failure_queue.max_in_memory,
+                failed_events_spill_batch_size=cfg.failure_queue.spill_batch_size,
+                failed_events_dump_max_bytes=cfg.failure_queue.max_dump_file_size_mb * 1024 * 1024,
+                failed_events_dump_backups=cfg.failure_queue.max_dump_backups,
+                failed_events_max_retries=cfg.failure_queue.max_retries,
+            )
+            return service
+        
+        try:
+            # 使用线程池 + 超时控制（避免阻塞 Core 启动）
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_do_init)
+                service = future.result(timeout=3.0)  # 最多等待 3 秒
+                logger.info(f"Memory service auto-enabled from {memory_config_path}")
+                return service
+        except concurrent.futures.TimeoutError:
+            logger.warning(f"Memory auto-init timed out (>3s) from {memory_config_path}, degraded to no-memory mode")
+            return None
+        except Exception as e:
+            logger.warning(f"Memory auto-init failed from {memory_config_path}: {e}")
+            return None
+
     async def _session_loop(self, session_key: str) -> None:
         """
         单个 session 的 worker 循环：串行消费 inbox。
@@ -482,6 +542,25 @@ class Core:
                     "ingest_count": len(outcome.ingest),
                 }
                 logger.debug(f"[GATE:OUT] {json.dumps(decision_info, ensure_ascii=False)}")
+
+                # 0) 将入站 observation 写入 memory（fail-open）
+                if self.memory_service is not None and session_key != self.system_session_key:
+                    try:
+                        gate_result = {
+                            "action": outcome.decision.action.value if hasattr(outcome.decision.action, "value") else str(outcome.decision.action),
+                            "scene": outcome.decision.scene.value if hasattr(outcome.decision.scene, "value") else str(outcome.decision.scene),
+                            "score": outcome.decision.score,
+                            "reasons": list(outcome.decision.reasons or []),
+                        }
+                        event = self.memory_service.append_event(
+                            obs=obs,
+                            session_key=session_key,
+                            gate_result=gate_result,
+                            meta=dict(obs.metadata or {}),
+                        )
+                        obs.metadata["memory_event_id"] = event.event_id
+                    except Exception as e:
+                        logger.warning(f"[{session_key}] Memory append_event failed: {e}")
 
                 # 1) emit
                 for emit_obs in outcome.emit:
@@ -712,6 +791,27 @@ class Core:
             and decision.action == GateAction.DELIVER
             and obs.obs_type == ObservationType.MESSAGE
         ):
+            memory_turn_id: Optional[str] = None
+            if self.memory_service is not None:
+                try:
+                    input_event_id = (obs.metadata or {}).get("memory_event_id")
+                    if input_event_id:
+                        turn = self.memory_service.append_turn(
+                            session_key=session_key,
+                            input_event_id=input_event_id,
+                            plan=None,
+                            meta={
+                                "gate_action": decision.action.value if hasattr(decision.action, "value") else str(decision.action),
+                                "gate_scene": decision.scene.value if hasattr(decision.scene, "value") else str(decision.scene),
+                            },
+                        )
+                        memory_turn_id = turn.turn_id
+                    else:
+                        logger.warning(
+                            f"[{session_key}] Skip memory turn: missing memory_event_id for obs={obs.obs_id}"
+                        )
+                except Exception as e:
+                    logger.warning(f"[{session_key}] Memory append_turn failed: {e}")
             try:
                 logger.debug(f"[{session_key}] Calling Agent for DELIVER decision")
                 
@@ -728,9 +828,27 @@ class Core:
                 
                 # 将 agent 的 emit 投递回 bus
                 for emit_obs in agent_outcome.emit:
+                    if memory_turn_id:
+                        emit_obs.metadata["memory_turn_id"] = memory_turn_id
+                        emit_obs.metadata["memory_direction"] = "outbound"
                     self.bus.publish_nowait(emit_obs)
                     logger.debug(f"[{session_key}] Agent emit: {emit_obs.source_name}")
                 
+                if self.memory_service is not None and memory_turn_id is not None:
+                    try:
+                        final_output_obs_id = (
+                            agent_outcome.emit[0].obs_id if agent_outcome.emit else None
+                        )
+                        turn_status = "error" if agent_outcome.error else "ok"
+                        self.memory_service.finish_turn(
+                            turn_id=memory_turn_id,
+                            final_output_obs_id=final_output_obs_id,
+                            status=turn_status,
+                            error=agent_outcome.error,
+                        )
+                    except Exception as e:
+                        logger.warning(f"[{session_key}] Memory finish_turn failed: {e}")
+
                 # 记录 trace 信息
                 if agent_outcome.error:
                     logger.warning(f"[{session_key}] Agent error: {agent_outcome.error}")
@@ -740,6 +858,15 @@ class Core:
             
             except Exception as e:
                 logger.exception(f"[{session_key}] Agent exception: {e}")
+                if self.memory_service is not None and memory_turn_id is not None:
+                    try:
+                        self.memory_service.finish_turn(
+                            turn_id=memory_turn_id,
+                            status="error",
+                            error=str(e),
+                        )
+                    except Exception as close_err:
+                        logger.warning(f"[{session_key}] Memory finish_turn(exception) failed: {close_err}")
         
         # ============================================================
         # Step 3: Debug 记录与日志（兼容旧逻辑）
