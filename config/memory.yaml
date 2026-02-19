@@ -7,7 +7,7 @@ database:
   # MySQL: mysql+pymysql://user:password@host:3306/dbname
   # SQLite: sqlite:///./memory.db
   # SQLite 内存: sqlite:///:memory:
-  dsn: "<MYSQL_DSN>"
+  dsn: "mysql+pymysql://root:123456@localhost:3306/mk2"
   
   # 连接池设置
   pool_size: 10
@@ -99,3 +99,20 @@ search:
 logging:
   level: INFO
   format: "[%(asctime)s] %(name)s - %(levelname)s - %(message)s"
+
+# 失败事件队列配置（DB 不可用时的缓冲与落盘策略）
+failure_queue:
+  # 内存中最多保留多少条失败事件，超过会触发分批落盘
+  max_in_memory: 10000
+
+  # 队列超限时，每次至少落盘多少条
+  spill_batch_size: 200
+
+  # 单个 dump 文件最大大小（MB），超过会轮转
+  max_dump_file_size_mb: 50
+
+  # dump 文件轮转备份数量（例如 3 => .1/.2/.3）
+  max_dump_backups: 3
+
+  # 单条失败事件最大重试次数，超过后转入 dead-letter 文件
+  max_retries: 20

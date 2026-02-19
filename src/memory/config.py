@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import yaml
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Optional
 
 
@@ -42,22 +42,45 @@ class VectorConfig:
 
 
 @dataclass
+class FailureQueueConfig:
+    """失败事件队列配置"""
+    max_in_memory: int = 10000
+    spill_batch_size: int = 200
+    max_dump_file_size_mb: int = 50
+    max_dump_backups: int = 3
+    max_retries: int = 20
+
+
+@dataclass
 class MemoryConfig:
     """Memory 子系统配置"""
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     vault: VaultConfig = field(default_factory=VaultConfig)
     vector: VectorConfig = field(default_factory=VectorConfig)
+    failure_queue: FailureQueueConfig = field(default_factory=FailureQueueConfig)
     
     @classmethod
     def from_dict(cls, data: dict) -> MemoryConfig:
-        """从字典创建配置"""
+        """从字典创建配置（忽略未知字段，兼容扩展配置）"""
+        data = _as_dict(data)
+        database_block = _as_dict(data.get("database"))
+        vault_block = _as_dict(data.get("vault"))
+        vector_block = _as_dict(data.get("vector"))
+        embedding_block = _as_dict(vector_block.get("embedding"))
+        failure_queue_block = _as_dict(data.get("failure_queue"))
+
+        vector_kwargs = _filter_dataclass_kwargs(VectorConfig, vector_block)
+        vector_kwargs.pop("embedding", None)
+
         return cls(
-            database=DatabaseConfig(**data.get("database", {})),
-            vault=VaultConfig(**data.get("vault", {})),
+            database=DatabaseConfig(**_filter_dataclass_kwargs(DatabaseConfig, database_block)),
+            vault=VaultConfig(**_filter_dataclass_kwargs(VaultConfig, vault_block)),
             vector=VectorConfig(
-                enabled=data.get("vector", {}).get("enabled", False),
-                type=data.get("vector", {}).get("type", "memory"),
-                embedding=EmbeddingConfig(**data.get("vector", {}).get("embedding", {})),
+                embedding=_build_embedding_config(embedding_block),
+                **vector_kwargs,
+            ),
+            failure_queue=FailureQueueConfig(
+                **_filter_dataclass_kwargs(FailureQueueConfig, failure_queue_block)
             ),
         )
     
@@ -90,6 +113,38 @@ def _replace_env_vars(obj):
         return [_replace_env_vars(item) for item in obj]
     else:
         return obj
+
+
+def _as_dict(value: object) -> dict:
+    """将输入规范化为 dict。"""
+    return value if isinstance(value, dict) else {}
+
+
+def _filter_dataclass_kwargs(dataclass_type, raw: dict) -> dict:
+    """过滤 dataclass 未定义的键，避免配置扩展字段导致构造失败。"""
+    allowed_keys = {f.name for f in fields(dataclass_type)}
+    return {k: v for k, v in _as_dict(raw).items() if k in allowed_keys}
+
+
+def _build_embedding_config(raw: dict) -> EmbeddingConfig:
+    """构建 EmbeddingConfig，并兼容 embedding.<provider>.dimension 写法。"""
+    raw = _as_dict(raw)
+    kwargs = _filter_dataclass_kwargs(EmbeddingConfig, raw)
+
+    # 兼容旧/扩展配置：当未提供 embedding.dimension 时，从当前 provider 子块读取。
+    if "dimension" not in kwargs:
+        provider = str(kwargs.get("type", EmbeddingConfig.type))
+        provider_block = _as_dict(raw.get(provider))
+        provider_dim = provider_block.get("dimension")
+        if isinstance(provider_dim, (int, float)):
+            kwargs["dimension"] = int(provider_dim)
+        elif isinstance(provider_dim, str):
+            try:
+                kwargs["dimension"] = int(provider_dim)
+            except ValueError:
+                pass
+
+    return EmbeddingConfig(**kwargs)
 
 
 # =============================================================================

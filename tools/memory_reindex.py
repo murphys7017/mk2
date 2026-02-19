@@ -38,7 +38,11 @@ def create_memory_service(config_path: str | Path) -> MemoryService:
     config = config_provider.snapshot()
     
     # 创建数据库后端
-    db_backend = SQLAlchemyBackend(config.database.dsn)
+    db_backend = SQLAlchemyBackend(
+        config.database.dsn,
+        pool_size=config.database.pool_size,
+        max_overflow=config.database.max_overflow,
+    )
     
     # 创建向量索引（如果启用）
     vector_index = None
@@ -64,9 +68,50 @@ def create_memory_service(config_path: str | Path) -> MemoryService:
         markdown_vault_path=config.vault.root_path,
         vector_index=vector_index,
         embedding_provider=embedding_provider,
+        failed_events_max_in_memory=config.failure_queue.max_in_memory,
+        failed_events_spill_batch_size=config.failure_queue.spill_batch_size,
+        failed_events_dump_max_bytes=config.failure_queue.max_dump_file_size_mb * 1024 * 1024,
+        failed_events_dump_backups=config.failure_queue.max_dump_backups,
+        failed_events_max_retries=config.failure_queue.max_retries,
     )
     
     return service
+
+
+def _iter_vault_documents(service: MemoryService):
+    """迭代当前 vault 中可用于向量索引的文档。"""
+    if not service.markdown_vault:
+        return []
+    
+    docs = []
+    # Knowledge 文档：优先用于检索
+    for key in service.markdown_vault.list_knowledge():
+        content = service.markdown_vault.get_knowledge(key) or ""
+        if not content.strip():
+            continue
+        docs.append(
+            (
+                f"kb/knowledge/{key}",
+                content,
+                {"scope": "kb", "kind": "knowledge", "key": key, "source": "markdown_vault"},
+            )
+        )
+    
+    # Config 文档：作为可选补充索引
+    config_cache = getattr(service.markdown_vault, "_config_cache", {})
+    for key, doc in config_cache.items():
+        content = getattr(doc, "content", "") or ""
+        if not content.strip():
+            continue
+        docs.append(
+            (
+                f"config/config/{key}",
+                content,
+                {"scope": "config", "kind": "config", "key": key, "source": "markdown_vault"},
+            )
+        )
+    
+    return docs
 
 
 def reindex(config_path: str | Path, force: bool = False) -> int:
@@ -88,15 +133,24 @@ def reindex(config_path: str | Path, force: bool = False) -> int:
         logger.error(f"Failed to create MemoryService: {e}")
         return 0
     
-    config = service.markdown_store
-    
     # 如果向量索引未启用，提示
     if not service.vector_index and not force:
         logger.info("Vector index not enabled, skipping reindex")
         logger.info("Use --force to reindex anyway (to in-memory index)")
+        service.close()
+        return 0
+    
+    if not service.vector_index:
+        logger.warning("Vector index not available, reindex skipped")
+        service.close()
+        return 0
     
     logger.info("Starting reindex...")
-    count = service.reindex_all_items()
+    service.vector_index.clear()
+    count = 0
+    for item_id, content, metadata in _iter_vault_documents(service):
+        service.vector_index.upsert(item_id, content, metadata)
+        count += 1
     logger.info(f"Reindexed {count} items successfully")
     
     service.close()
@@ -123,16 +177,38 @@ def list_items(config_path: str | Path, scope: str | None = None) -> int:
         return 0
     
     logger.info("Listing items...")
-    
-    scopes = [scope] if scope else ["global", "user", "episodic", "kb", "session"]
+
+    vault = service.markdown_vault
+    if not vault:
+        logger.warning("Markdown vault unavailable")
+        service.close()
+        return 0
+
     total = 0
-    
-    for s in scopes:
-        items = service.get_items(s)
-        logger.info(f"  {s}: {len(items)} items")
-        for item in items:
-            logger.info(f"    - {item.scope}/{item.kind}/{item.key}: {item.content[:50]}")
-        total += len(items)
+    normalized_scope = (scope or "").strip().lower()
+
+    list_configs = normalized_scope in ("", "config")
+    list_knowledge = normalized_scope in ("", "knowledge", "kb")
+
+    if normalized_scope and not (list_configs or list_knowledge):
+        logger.warning("Unsupported scope '%s'. Use: config / knowledge / kb", scope)
+
+    if list_configs:
+        config_cache = getattr(vault, "_config_cache", {})
+        config_keys = sorted(config_cache.keys())
+        logger.info(f"  config: {len(config_keys)} items")
+        for key in config_keys:
+            content = vault.get_config(key) or ""
+            logger.info(f"    - config/{key}: {content[:50]}")
+        total += len(config_keys)
+
+    if list_knowledge:
+        knowledge_keys = sorted(vault.list_knowledge())
+        logger.info(f"  knowledge: {len(knowledge_keys)} items")
+        for key in knowledge_keys:
+            content = vault.get_knowledge(key) or ""
+            logger.info(f"    - knowledge/{key}: {content[:50]}")
+        total += len(knowledge_keys)
     
     service.close()
     return total
@@ -164,7 +240,7 @@ def main():
     )
     list_parser.add_argument(
         "-s", "--scope",
-        help="作用域过滤（global/user/episodic/kb/session）"
+        help="作用域过滤（config/knowledge/kb）"
     )
     
     args = parser.parse_args()

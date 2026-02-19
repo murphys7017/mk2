@@ -14,10 +14,6 @@ from .models import (
     ContextPack,
     SerializableMixin,
 )
-from .vault import (
-    MarkdownItemStore,
-    MarkdownVaultError,
-)
 from .service import MemoryService
 from .config import (
     MemoryConfig,
@@ -25,6 +21,8 @@ from .config import (
 )
 from .backends import (
     SQLAlchemyBackend,
+    MarkdownVaultHybrid,
+    MarkdownVaultError,
     VectorIndex,
     EmbeddingProvider,
     InMemoryVectorIndex,
@@ -40,7 +38,7 @@ __all__ = [
     "ContextPack",
     "SerializableMixin",
     # Vault
-    "MarkdownItemStore",
+    "MarkdownVaultHybrid",
     "MarkdownVaultError",
     # Service
     "MemoryService",

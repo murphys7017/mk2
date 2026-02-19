@@ -10,11 +10,17 @@ import time
 from pathlib import Path
 
 from src.schemas.observation import make_message_observation
-from src.memory.models import EventRecord, TurnRecord, MemoryItem, ContextPack
+from src.memory.models import EventRecord, TurnRecord
+from src.memory.config import MemoryConfigProvider
 from src.memory.backends.relational import SQLAlchemyBackend
 from src.memory.backends.vector import InMemoryVectorIndex, DeterministicEmbeddingProvider
 from src.memory.service import MemoryService
-from src.memory.vault import MarkdownItemStore
+from src.memory.backends.markdown_hybrid import MarkdownVaultHybrid
+
+
+def _load_test_dsn() -> str:
+    config = MemoryConfigProvider(Path("config/memory.yaml")).snapshot()
+    return config.database.dsn
 
 
 @pytest.fixture
@@ -27,13 +33,21 @@ def temp_vault():
 @pytest.fixture
 def memory_service(temp_vault):
     """创建内存 MemoryService"""
-    db_backend = SQLAlchemyBackend("sqlite:///:memory:")
+    from src.memory.backends.relational import Base
+    
+    db_backend = SQLAlchemyBackend(_load_test_dsn())
+    
+    # 清理数据库：删除所有表并重新创建（确保测试隔离）
+    Base.metadata.drop_all(db_backend.engine)
+    Base.metadata.create_all(db_backend.engine)
+    
     vector_index = InMemoryVectorIndex(DeterministicEmbeddingProvider())
     embedding_provider = DeterministicEmbeddingProvider()
+    markdown_vault = MarkdownVaultHybrid(temp_vault, db_backend=db_backend)
     
     service = MemoryService(
         db_backend=db_backend,
-        markdown_vault_path=temp_vault,
+        markdown_vault=markdown_vault,
         vector_index=vector_index,
         embedding_provider=embedding_provider,
     )
@@ -92,70 +106,78 @@ class TestEventRecord:
         assert restored.obs.payload.text == event.obs.payload.text
 
 
-class TestMemoryItemStore:
-    """MemoryItemStore 测试"""
+class TestMarkdownVaultHybrid:
+    """MarkdownVaultHybrid 测试"""
     
-    def test_upsert_and_get(self, temp_vault):
-        """测试新增和获取"""
-        store = MarkdownItemStore(temp_vault)
+    def test_upsert_and_get_config(self, temp_vault):
+        """测试配置文件新增和获取"""
+        vault = MarkdownVaultHybrid(temp_vault)
         
-        item = MemoryItem(
-            scope="global",
-            kind="persona",
-            key="assistant",
+        vault.upsert_config(
+            key="system",
             content="I am a helpful assistant",
-            source="system",
+            frontmatter={"version": "1.0"},
         )
         
-        store.upsert(item)
-        
-        retrieved = store.get("global", "persona", "assistant")
-        assert retrieved is not None
-        assert retrieved.content == "I am a helpful assistant"
+        retrieved = vault.get_system_config()
+        assert retrieved == "I am a helpful assistant"
     
-    def test_list_items(self, temp_vault):
-        """测试列出项"""
-        store = MarkdownItemStore(temp_vault)
+    def test_upsert_and_get_knowledge(self, temp_vault):
+        """测试知识条目新增和获取"""
+        vault = MarkdownVaultHybrid(temp_vault)
+        
+        vault.upsert_knowledge(
+            key="facts/python",
+            content="Python is a programming language",
+            frontmatter={"topic": "python"},
+        )
+        
+        retrieved = vault.get_knowledge("facts/python")
+        assert retrieved == "Python is a programming language"
+    
+    def test_list_knowledge(self, temp_vault):
+        """测试列出知识条目"""
+        vault = MarkdownVaultHybrid(temp_vault)
         
         for i in range(3):
-            item = MemoryItem(
-                scope="global",
-                kind="knowledge",
-                key=f"fact_{i}",
+            vault.upsert_knowledge(
+                key=f"facts/fact_{i}",
                 content=f"Fact {i}",
-                source="system",
             )
-            store.upsert(item)
         
-        items = store.list("global")
+        items = vault.list_knowledge("facts")
         assert len(items) == 3
-    
-    def test_search_text(self, temp_vault):
-        """测试文本搜索"""
-        store = MarkdownItemStore(temp_vault)
+
+    def test_reload_prunes_stale_metadata(self, temp_vault):
+        """删除文件后 reload 应清理残留 metadata"""
+        vault = MarkdownVaultHybrid(temp_vault)
+        vault.upsert_config("system", "test")
+
+        system_path = Path(temp_vault) / "md" / "system.md"
+        assert system_path.exists()
+        system_path.unlink()
+
+        vault.reload()
+        stale_exists = any(Path(k).as_posix() == "md/system.md" for k in vault.metadata.keys())
+        assert stale_exists is False
+
+    def test_delete_knowledge_syncs_db(self, temp_vault):
+        """删除知识条目应同步删除 DB 记录"""
+        from src.memory.backends.relational import Base
         
-        item1 = MemoryItem(
-            scope="global",
-            kind="knowledge",
-            key="fact_1",
-            content="Python is a programming language",
-            source="system",
-        )
+        db_backend = SQLAlchemyBackend(_load_test_dsn())
         
-        item2 = MemoryItem(
-            scope="global",
-            kind="knowledge",
-            key="fact_2",
-            content="JavaScript is used for web development",
-            source="system",
-        )
+        # 清理数据库（确保测试隔离）
+        Base.metadata.drop_all(db_backend.engine)
+        Base.metadata.create_all(db_backend.engine)
         
-        store.upsert(item1)
-        store.upsert(item2)
-        
-        results = store.search_text("programming")
-        assert len(results) == 1
-        assert results[0].key == "fact_1"
+        db_backend.initialize()
+        vault = MarkdownVaultHybrid(temp_vault, db_backend=db_backend)
+        vault.upsert_knowledge("facts/test", "hello")
+
+        assert db_backend.get_knowledge_dict("facts/test") is not None
+        assert vault.delete_knowledge("facts/test") is True
+        assert db_backend.get_knowledge_dict("facts/test") is None
 
 
 class TestMemoryService:
@@ -221,75 +243,168 @@ class TestMemoryService:
         assert turn.input_event_id == event.event_id
         assert turn.plan["intent"] == "greet"
     
-    def test_upsert_item(self, memory_service):
-        """测试新增记忆项"""
-        item = MemoryItem(
-            scope="global",
-            kind="persona",
-            key="assistant_role",
-            content="I am a helpful AI assistant",
-            source="system",
-            confidence=1.0,
-        )
-        
-        memory_service.upsert_item(item)
-        
-        retrieved = memory_service.get_item("global", "persona", "assistant_role")
-        assert retrieved is not None
-        assert retrieved.content == "I am a helpful AI assistant"
-    
-    def test_build_context_pack(self, memory_service):
-        """测试构建上下文包"""
-        # 添加 persona
-        persona = MemoryItem(
-            scope="global",
-            kind="persona",
-            key="assistant_role",
-            content="I am a helpful AI assistant",
-            source="system",
-        )
-        memory_service.upsert_item(persona)
-        
-        # 添加事件
+    def test_get_system_prompt(self, memory_service):
+        """测试获取系统 prompt"""
+        memory_service.upsert_system_prompt("You are a helpful assistant")
+        prompt = memory_service.get_system_prompt()
+        assert prompt == "You are a helpful assistant"
+
+    def test_finish_turn_without_plan(self, memory_service):
+        """plan=None 时 finish_turn/get_recent_turns 不应崩溃"""
         obs = make_message_observation(
             source_name="test",
             session_key="session_1",
             actor_id="user_1",
-            text="Tell me about Python",
+            text="Hello",
         )
-        memory_service.append_event(obs, "session_1")
-        
-        # 构建上下文
-        pack = memory_service.build_context_pack("session_1", user_id="user_1")
-        
-        assert len(pack.persona) > 0
-        assert len(pack.recent_events) > 0
-        assert pack.persona[0].key == "assistant_role"
-    
-    def test_search_items(self, memory_service):
-        """测试搜索记忆项"""
-        item1 = MemoryItem(
-            scope="global",
-            kind="knowledge",
-            key="python_facts",
-            content="Python is a powerful programming language",
-            source="system",
+        event = memory_service.append_event(obs, "session_1")
+        turn = memory_service.append_turn(
+            session_key="session_1",
+            input_event_id=event.event_id,
+            plan=None,
         )
-        
-        item2 = MemoryItem(
-            scope="global",
-            kind="knowledge",
-            key="web_facts",
-            content="Web development requires HTML, CSS, JavaScript",
-            source="system",
+        memory_service.finish_turn(turn.turn_id, status="ok")
+        turns = memory_service.get_recent_turns("session_1", limit=10)
+        assert len(turns) >= 1
+
+    def test_finish_turn_can_clear_error(self, memory_service):
+        """error=None 应清空历史错误信息"""
+        obs = make_message_observation(
+            source_name="test",
+            session_key="session_1",
+            actor_id="user_1",
+            text="Hello",
         )
-        
-        memory_service.upsert_item(item1)
-        memory_service.upsert_item(item2)
-        
-        # 搜索应该返回相关项
-        results = memory_service.search_items("programming language", topk=5)
-        assert len(results) >= 1
+        event = memory_service.append_event(obs, "session_1")
+        turn = memory_service.append_turn(
+            session_key="session_1",
+            input_event_id=event.event_id,
+            plan={"intent": "demo"},
+        )
+        memory_service.finish_turn(turn.turn_id, status="error", error="boom")
+        memory_service.finish_turn(turn.turn_id, status="ok", error=None)
+        turn_dict = memory_service.db_backend.get_turn_dict(turn.turn_id)
+        assert turn_dict["status"] == "ok"
+        assert turn_dict["error"] is None
+
+    def test_turn_id_uniqueness(self, memory_service):
+        """高频创建 turn_id 不应碰撞"""
+        obs = make_message_observation(
+            source_name="test",
+            session_key="session_1",
+            actor_id="user_1",
+            text="Hello",
+        )
+        event = memory_service.append_event(obs, "session_1")
+        turn_ids = [
+            memory_service.append_turn("session_1", event.event_id).turn_id
+            for _ in range(50)
+        ]
+        assert len(set(turn_ids)) == len(turn_ids)
+
+    def test_recent_events_dedup_between_l1_l2(self, memory_service):
+        """并发 flush 重叠场景应去重"""
+        obs = make_message_observation(
+            source_name="test",
+            session_key="session_1",
+            actor_id="user_1",
+            text="Hello",
+        )
+        event = memory_service.append_event(obs, "session_1")
+
+        original = memory_service.db_backend.list_events_by_session
+
+        def hooked(session_key: str, limit: int = 100, offset: int = 0):
+            memory_service._flush_event_buffer()
+            return original(session_key, limit=limit, offset=offset)
+
+        memory_service.db_backend.list_events_by_session = hooked
+        events = memory_service.get_recent_events("session_1", limit=10)
+        event_ids = [e.event_id for e in events]
+        assert event.event_id in event_ids
+        assert len(event_ids) == len(set(event_ids))
+
+    def test_failed_events_retry(self, memory_service):
+        """失败事件应可通过重试恢复"""
+        obs = make_message_observation(
+            source_name="test",
+            session_key="session_1",
+            actor_id="user_1",
+            text="Hello",
+        )
+        event = memory_service.append_event(obs, "session_1")
+
+        original = memory_service.db_backend.save_event_dict
+        calls = {"n": 0}
+
+        def flaky(event_dict: dict):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient failure")
+            return original(event_dict)
+
+        memory_service.db_backend.save_event_dict = flaky
+        memory_service._flush_event_buffer()
+        assert len(memory_service._failed_events) == 1
+        memory_service._retry_failed_events()
+        assert len(memory_service._failed_events) == 0
+        assert memory_service.get_event(event.event_id) is not None
+
+    def test_failed_events_queue_overflow_spills_to_disk(self, temp_vault):
+        """失败事件超过内存上限时应分批落盘。"""
+        db_backend = SQLAlchemyBackend("sqlite:///:memory:")
+        markdown_vault = MarkdownVaultHybrid(temp_vault, db_backend=db_backend)
+        service = MemoryService(
+            db_backend=db_backend,
+            markdown_vault=markdown_vault,
+            failed_events_max_in_memory=3,
+            failed_events_spill_batch_size=2,
+            failed_events_dump_max_bytes=1024 * 1024,
+            failed_events_dump_backups=1,
+        )
+        try:
+            for i in range(5):
+                service._enqueue_failed_event(
+                    {
+                        "event_dict": {"event_id": f"evt_{i}", "obs_json": "{}"},
+                        "error": "boom",
+                        "failed_at": time.time(),
+                        "retries": 1,
+                    }
+                )
+
+            assert len(service._failed_events) == 3
+            dump_file = Path(temp_vault) / "failed_events.jsonl"
+            assert dump_file.exists()
+            lines = [ln for ln in dump_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
+            assert len(lines) == 2
+        finally:
+            service.close()
+
+    def test_failed_events_dump_rotation_keeps_backup_limit(self, temp_vault):
+        """失败事件 dump 文件应按上限轮转且不超过备份数。"""
+        db_backend = SQLAlchemyBackend("sqlite:///:memory:")
+        markdown_vault = MarkdownVaultHybrid(temp_vault, db_backend=db_backend)
+        service = MemoryService(
+            db_backend=db_backend,
+            markdown_vault=markdown_vault,
+            failed_events_dump_max_bytes=120,
+            failed_events_dump_backups=2,
+        )
+        try:
+            payload = "x" * 180
+            for i in range(4):
+                service._append_records_to_file(
+                    [{"event_dict": {"event_id": f"evt_{i}", "payload": payload}, "retries": 1}],
+                    service._failed_events_file,
+                )
+
+            assert service._failed_events_file.exists()
+            assert service._rotated_dump_path(service._failed_events_file, 1).exists()
+            assert service._rotated_dump_path(service._failed_events_file, 2).exists()
+            assert not service._rotated_dump_path(service._failed_events_file, 3).exists()
+        finally:
+            service.close()
 
 
 class TestVectorIndex:
