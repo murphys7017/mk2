@@ -10,7 +10,12 @@ import pytest
 from src.llm import LLMConfig, LLMGateway
 
 
+# 集成测试开关：只有设置 RUN_LLM_LIVE_TESTS=1 才执行
+SKIP_INTEGRATION = os.getenv("RUN_LLM_LIVE_TESTS") != "1"
+
+
 @pytest.mark.integration
+@pytest.mark.skipif(SKIP_INTEGRATION, reason="需要设置 RUN_LLM_LIVE_TESTS=1 才能运行 LLM 集成测试")
 def test_bailian_api_call_live() -> None:
     """
     Live test for Bailian OpenAI-compatible endpoint.
@@ -19,13 +24,10 @@ def test_bailian_api_call_live() -> None:
       - BAILIAN_MODEL
       - (optional) BAILIAN_API_BASE
     """
-    if os.getenv("RUN_LLM_LIVE_TESTS") != "1":
-        pytest.skip("Set RUN_LLM_LIVE_TESTS=1 to enable live LLM tests")
-
     cfg = LLMConfig.load("config/llm.yaml")
 
     if "bailian" not in cfg.providers:
-        pytest.skip("bailian provider not configured in config/llm.yaml")
+        raise AssertionError("bailian provider not configured in config/llm.yaml")
 
     provider = "bailian"
     preferred = cfg.default_models.get(provider) or []
@@ -34,7 +36,7 @@ def test_bailian_api_call_live() -> None:
     else:
         model_map = cfg.models.get(provider, {})
         if not model_map:
-            pytest.skip("No bailian models configured in config/llm.yaml")
+            raise AssertionError("No bailian models configured in config/llm.yaml")
         model = next(iter(model_map.keys()))
 
     # Ensure provider exists; override key/base via default_params if needed
@@ -48,9 +50,15 @@ def test_bailian_api_call_live() -> None:
         },
     )
 
-    text = gateway.call([
-        {"role": "user", "content": "say ok"},
-    ])
+    try:
+        text = gateway.call([
+            {"role": "user", "content": "say ok"},
+        ])
+    except RuntimeError as e:
+        # 处理配额耗尽错误（Bailian 免费额度）
+        if "403" in str(e) and "FreeTierOnly" in str(e):
+            pytest.skip(f"Bailian 免费额度已用完，跳过测试: {e}")
+        raise  # 其他错误仍然失败
 
     assert isinstance(text, str)
     assert len(text.strip()) > 0
@@ -64,13 +72,10 @@ def test_ollama_api_call_live() -> None:
       - OLLAMA_MODEL
       - (optional) OLLAMA_API_BASE
     """
-    if os.getenv("RUN_LLM_LIVE_TESTS") != "1":
-        pytest.skip("Set RUN_LLM_LIVE_TESTS=1 to enable live LLM tests")
-
     cfg = LLMConfig.load("config/llm.yaml")
 
     if "ollama" not in cfg.providers:
-        pytest.skip("ollama provider not configured in config/llm.yaml")
+        raise AssertionError("ollama provider not configured in config/llm.yaml")
 
     provider = "ollama"
     preferred = cfg.default_models.get(provider) or []
@@ -79,7 +84,7 @@ def test_ollama_api_call_live() -> None:
     else:
         model_map = cfg.models.get(provider, {})
         if not model_map:
-            pytest.skip("No ollama models configured in config/llm.yaml")
+            raise AssertionError("No ollama models configured in config/llm.yaml")
         model = next(iter(model_map.keys()))
 
     gateway = LLMGateway(

@@ -7,6 +7,7 @@
 import pytest
 import tempfile
 import time
+import json
 from pathlib import Path
 
 from src.schemas.observation import make_message_observation
@@ -403,6 +404,96 @@ class TestMemoryService:
             assert service._rotated_dump_path(service._failed_events_file, 1).exists()
             assert service._rotated_dump_path(service._failed_events_file, 2).exists()
             assert not service._rotated_dump_path(service._failed_events_file, 3).exists()
+        finally:
+            service.close()
+
+    def test_failed_events_persist_and_reload_from_disk(self, temp_vault):
+        """失败事件应可落盘并在下次启动时重新加载。"""
+        db_backend_1 = SQLAlchemyBackend("sqlite:///:memory:")
+        vault_1 = MarkdownVaultHybrid(temp_vault, db_backend=db_backend_1)
+        service_1 = MemoryService(
+            db_backend=db_backend_1,
+            markdown_vault=vault_1,
+            flush_interval_ms=60000,
+        )
+        try:
+            service_1._enqueue_failed_event(
+                {
+                    "event_dict": {
+                        "event_id": "evt_reload_1",
+                        "session_key": "s1",
+                        "ts": time.time(),
+                        "obs_json": "{}",
+                        "meta_json": "{}",
+                    },
+                    "error": "persist_me",
+                    "failed_at": time.time(),
+                    "retries": 0,
+                }
+            )
+            service_1._persist_failed_events_to_disk()
+            dump_file = Path(temp_vault) / "failed_events.jsonl"
+            assert dump_file.exists()
+            assert dump_file.read_text(encoding="utf-8").strip()
+        finally:
+            service_1.close()
+
+        db_backend_2 = SQLAlchemyBackend("sqlite:///:memory:")
+        vault_2 = MarkdownVaultHybrid(temp_vault, db_backend=db_backend_2)
+        service_2 = MemoryService(
+            db_backend=db_backend_2,
+            markdown_vault=vault_2,
+            flush_interval_ms=60000,
+        )
+        try:
+            assert len(service_2._failed_events) >= 1
+            dump_file = Path(temp_vault) / "failed_events.jsonl"
+            assert not dump_file.exists()
+        finally:
+            service_2.close()
+
+    def test_failed_events_move_to_dead_letter_after_max_retries(self, temp_vault):
+        """超过最大重试次数的失败事件应进入 dead-letter 文件。"""
+        db_backend = SQLAlchemyBackend("sqlite:///:memory:")
+        markdown_vault = MarkdownVaultHybrid(temp_vault, db_backend=db_backend)
+        service = MemoryService(
+            db_backend=db_backend,
+            markdown_vault=markdown_vault,
+            failed_events_max_retries=2,
+            flush_interval_ms=60000,
+        )
+        try:
+            def always_fail(_event_dict: dict):
+                raise RuntimeError("db_down")
+
+            service.db_backend.save_event_dict = always_fail
+            service._enqueue_failed_event(
+                {
+                    "event_dict": {
+                        "event_id": "evt_dead_1",
+                        "session_key": "s1",
+                        "ts": time.time(),
+                        "obs_json": "{}",
+                        "meta_json": "{}",
+                    },
+                    "error": "init",
+                    "failed_at": time.time(),
+                    "retries": 0,
+                }
+            )
+
+            service._retry_failed_events()
+            assert len(service._failed_events) == 1
+
+            service._retry_failed_events()
+            assert len(service._failed_events) == 0
+
+            dead_file = Path(temp_vault) / "failed_events.dead.jsonl"
+            assert dead_file.exists()
+            lines = [ln for ln in dead_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
+            assert len(lines) == 1
+            dead_record = json.loads(lines[0])
+            assert dead_record.get("retries") >= 2
         finally:
             service.close()
 

@@ -108,6 +108,11 @@ class FakeMemoryService:
         self.closed = True
 
 
+class FailingEventMemoryService(FakeMemoryService):
+    def append_event(self, obs, session_key, gate_result=None, meta=None):
+        raise RuntimeError("append_event failed")
+
+
 class DropGate:
     def __init__(self) -> None:
         self.metrics = None
@@ -229,6 +234,45 @@ async def test_core_drop_action_persists_event_only():
     await asyncio.sleep(0.1)
 
     assert spy.calls == 0
+    assert len(memory.turns) == 0
+    assert len(memory.finished) == 0
+
+    await core.shutdown()
+    assert memory.closed is True
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_core_skip_turn_when_append_event_failed():
+    orchestrator = EmitOrchestrator()
+    memory = FailingEventMemoryService()
+    core = Core(
+        bus_maxsize=100,
+        inbox_maxsize=16,
+        system_session_key="system",
+        message_routing="user",
+        enable_system_fanout=False,
+        enable_session_gc=False,
+        agent_orchestrator=orchestrator,
+        memory_service=memory,
+    )
+
+    task = asyncio.create_task(core.run_forever())
+    await _wait_until(lambda: core._router_task is not None and core._watcher_task is not None)
+
+    core.bus.publish_nowait(
+        Observation(
+            obs_type=ObservationType.MESSAGE,
+            source_name="test_input",
+            session_key="dm:test_append_event_fail",
+            actor=Actor(actor_id="u1", actor_type="user"),
+            payload=MessagePayload(text="hello"),
+        )
+    )
+
+    await _wait_until(lambda: orchestrator.calls >= 1)
+    await asyncio.sleep(0.1)
+
     assert len(memory.turns) == 0
     assert len(memory.finished) == 0
 

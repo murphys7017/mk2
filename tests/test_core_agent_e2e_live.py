@@ -4,7 +4,6 @@ E2E 集成测试：用户消息 → Gate DELIVER → Agent(LLM) → 回流到 Se
 from __future__ import annotations
 
 import asyncio
-import os
 from datetime import datetime, timezone
 from loguru import logger
 
@@ -19,20 +18,13 @@ from src.schemas.observation import (
     MessagePayload,
 )
 
-
-# 集成测试开关：只有设置 RUN_LLM_LIVE_TESTS=1 才执行
-SKIP_INTEGRATION = os.getenv("RUN_LLM_LIVE_TESTS") != "1"
-
-
 @pytest.mark.integration
-@pytest.mark.skipif(SKIP_INTEGRATION, reason="需要设置 RUN_LLM_LIVE_TESTS=1 才能运行 LLM 集成测试")
 @pytest.mark.asyncio
 async def test_core_agent_e2e_user_to_response():
     """
     E2E 测试：用户输入 → Gate DELIVER → Agent(LLM) → emit 回流 → SessionState 看到回复
     
     运行命令：
-    $env:RUN_LLM_LIVE_TESTS="1"
     uv run pytest tests/test_core_agent_e2e_live.py::test_core_agent_e2e_user_to_response -v -s
     """
     logger.info("Starting E2E test: user message → agent response")
@@ -151,7 +143,6 @@ async def test_core_agent_e2e_user_to_response():
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(SKIP_INTEGRATION, reason="需要设置 RUN_LLM_LIVE_TESTS=1 才能运行 LLM 集成测试")
 @pytest.mark.asyncio
 async def test_core_agent_with_context():
     """
