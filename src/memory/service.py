@@ -43,7 +43,7 @@ class MemoryService:
         self,
         db_backend: SQLAlchemyBackend,
         markdown_vault: Optional[MarkdownVaultHybrid] = None,
-        markdown_vault_path: str = "config",
+        markdown_vault_path: Optional[str] = None,
         vector_index: Optional[VectorIndex] = None,
         embedding_provider: Optional[EmbeddingProvider] = None,
         buffer_size: int = 1000,
@@ -59,7 +59,7 @@ class MemoryService:
         Args:
             db_backend: 数据库后端
             markdown_vault: Markdown 配置存储（推荐使用混合 Vault）
-            markdown_vault_path: Markdown 库路径（如果未提供 vault 实例）
+            markdown_vault_path: Markdown 库路径（来自 config/memory.yaml 中的 vault.root_path）
             vector_index: 向量索引（可选）
             embedding_provider: Embedding 提供者（可选）
             buffer_size: 缓冲区大小（默认1000）
@@ -74,6 +74,8 @@ class MemoryService:
         
         # Markdown 配置存储（混合架构）
         if markdown_vault is None:
+            if not markdown_vault_path:
+                raise ValueError("markdown_vault_path 必须来自配置文件（config/memory.yaml 的 vault.root_path）")
             from .backends.markdown_hybrid import MarkdownVaultHybrid
             self.markdown_vault = MarkdownVaultHybrid(
                 markdown_vault_path,

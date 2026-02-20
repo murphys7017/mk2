@@ -159,7 +159,7 @@ class MarkdownVaultHybrid:
     
     def __init__(
         self,
-        vault_root: str | Path = "config",
+        vault_root: str | Path,
         db_backend: Optional[SQLAlchemyBackend] = None,
         auto_sync: bool = True,
     ):
@@ -167,7 +167,7 @@ class MarkdownVaultHybrid:
         初始化 Markdown Vault
         
         Args:
-            vault_root: 根目录
+            vault_root: 根目录（必须，来自 config/memory.yaml 中的 vault.root_path）
             db_backend: 数据库后端（可选，用于同步）
             auto_sync: 是否自动同步变化的文件到数据库
         """
