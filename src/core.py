@@ -228,7 +228,7 @@ class Core:
 
     async def _startup(self) -> None:
         """启动所有组件"""
-        logger.info("Core starting up...")
+        # logger.info("Core starting up...")
 
         # 1. 启动 adapters（同步）
         for adapter in self.adapters:
@@ -334,10 +334,10 @@ class Core:
                 await asyncio.sleep(0.05)
 
             except asyncio.CancelledError:
-                logger.debug("Session watcher cancelled")
+                # logger.debug("Session watcher cancelled")
                 raise
             except Exception as e:
-                logger.error(f"Error in session watcher: {e}")
+                # logger.error(f"Error in session watcher: {e}")
                 await asyncio.sleep(0.5)
 
     # -------------------------
@@ -421,7 +421,7 @@ class Core:
         )
         self._workers[session_key] = task
         self._worker_stats[session_key] = 0
-        logger.info(f"Started worker for session: {session_key}")
+        # logger.info(f"Started worker for session: {session_key}")
 
     def _init_default_memory_service(self, memory_config_path: str) -> Optional["MemoryService"]:
         """默认初始化 memory service（失败降级，不影响 Core 启动）。
@@ -457,13 +457,13 @@ class Core:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(_do_init)
                 service = future.result(timeout=3.0)  # 最多等待 3 秒
-                logger.info(f"Memory service auto-enabled from {memory_config_path}")
+                # logger.info(f"Memory service auto-enabled from {memory_config_path}")
                 return service
         except concurrent.futures.TimeoutError:
-            logger.warning(f"Memory auto-init timed out (>3s) from {memory_config_path}, degraded to no-memory mode")
+            # logger.warning(f"Memory auto-init timed out (>3s) from {memory_config_path}, degraded to no-memory mode")
             return None
         except Exception as e:
-            logger.warning(f"Memory auto-init failed from {memory_config_path}: {e}")
+            # logger.warning(f"Memory auto-init failed from {memory_config_path}: {e}")
             return None
 
     async def _session_loop(self, session_key: str) -> None:
@@ -494,7 +494,7 @@ class Core:
                     "actor_id": obs.actor.actor_id if obs.actor else None,
                     "timestamp": obs.timestamp.isoformat() if obs.timestamp else None,
                 }
-                logger.debug(f"[WORKER:IN] {json.dumps(obs_info, ensure_ascii=False)}")
+                # logger.debug(f"[WORKER:IN] {json.dumps(obs_info, ensure_ascii=False)}")
                 
                 # 记录到 state 并更新 metrics
                 state.record(obs)
@@ -518,7 +518,7 @@ class Core:
                     "session_key": session_key,
                     "state_processed": state.processed_total if state else 0,
                 }
-                logger.debug(f"[GATE:CTX] {json.dumps(ctx_info, ensure_ascii=False)}")
+                # logger.debug(f"[GATE:CTX] {json.dumps(ctx_info, ensure_ascii=False)}")
 
                 outcome = self.gate.handle(obs, gate_ctx)
 
@@ -541,7 +541,7 @@ class Core:
                     "emit_count": len(outcome.emit),
                     "ingest_count": len(outcome.ingest),
                 }
-                logger.debug(f"[GATE:OUT] {json.dumps(decision_info, ensure_ascii=False)}")
+                # logger.debug(f"[GATE:OUT] {json.dumps(decision_info, ensure_ascii=False)}")
 
                 # 0) 将入站 observation 写入 memory（fail-open）
                 if self.memory_service is not None and session_key != self.system_session_key:
@@ -582,16 +582,16 @@ class Core:
                     "session_key": session_key,
                     "action": outcome.decision.action.value if hasattr(outcome.decision.action, 'value') else str(outcome.decision.action),
                 }
-                logger.debug(f"[DELIVER] {json.dumps(deliver_info, ensure_ascii=False)}")
+                # logger.debug(f"[DELIVER] {json.dumps(deliver_info, ensure_ascii=False)}")
                 
                 # 调用 _handle_observation 来处理（包括调用 Agent）
                 await self._handle_observation(session_key, obs, state, outcome.decision)
 
         except asyncio.CancelledError:
-            logger.debug(f"Worker for session {session_key} cancelled")
+            # logger.debug(f"Worker for session {session_key} cancelled")
             raise
         except Exception as e:
-            logger.error(f"Error in worker for session {session_key}: {e}")
+            # logger.error(f"Error in worker for session {session_key}: {e}")
             state.record_error()
             self.metrics.inc_error(session_key)
 
@@ -631,11 +631,7 @@ class Core:
         elif obs.obs_type == ObservationType.SCHEDULE:
             await self._on_system_tick(obs)
         else:
-            logger.debug(
-                f"[SYSTEM] obs_type={obs.obs_type.value}, "
-                f"source={obs.source_name}, "
-                f"actor={obs.actor.actor_id}"
-            )
+            logger.debug(f"[SYSTEM] obs_type={obs.obs_type.value}, source={obs.source_name}, actor={obs.actor.actor_id}")
 
     async def _on_system_pain(self, obs: Observation) -> None:
         """处理系统端接收到的痛觉（ALERT）"""
@@ -701,7 +697,7 @@ class Core:
             now = time.time()
             self.metrics.drops_overload_total += 1
             self.fanout_disabled_until = now + FANOUT_SUPPRESS_SECONDS
-            logger.warning(f"Drop overload detected: {drops_delta} drops in window")
+            # logger.warning(f"Drop overload detected: {drops_delta} drops in window")
 
             # 生成 system pain
             pain = make_pain_alert(
@@ -757,9 +753,7 @@ class Core:
 
             result = self.bus.publish_nowait(tick_obs)
             if not result.ok:
-                logger.warning(
-                    f"Failed to fanout tick to {session_key}: {result.reason}"
-                )
+                logger.warning(f"Failed to fanout tick to {session_key}: {result.reason}")
 
     async def _handle_user_observation(
         self, session_key: str, obs: Observation, state: SessionState, decision=None
@@ -780,7 +774,7 @@ class Core:
         source_name = obs.source_name or ""
         actor_id = obs.actor.actor_id if obs.actor else None
         if source_name.startswith("agent:") or actor_id == "agent":
-            logger.debug(f"[{session_key}] Skip agent observation to prevent loop")
+            # logger.debug(f"[{session_key}] Skip agent observation to prevent loop")
             return
         
         # ============================================================
@@ -807,9 +801,7 @@ class Core:
                         )
                         memory_turn_id = turn.turn_id
                     else:
-                        logger.warning(
-                            f"[{session_key}] Skip memory turn: missing memory_event_id for obs={obs.obs_id}"
-                        )
+                        logger.warning(f"[{session_key}] Skip memory turn: missing memory_event_id for obs={obs.obs_id}")
                 except Exception as e:
                     logger.warning(f"[{session_key}] Memory append_turn failed: {e}")
             try:
@@ -882,13 +874,13 @@ class Core:
         idle_sec = state.idle_seconds()
         idle_str = f", idle={idle_sec:.1f}s" if idle_sec is not None else ""
 
-        logger.debug(
-            f"[{session_key}] obs_type={obs.obs_type.value}, "
-            f"actor={obs.actor.actor_id}, "
-            f"processed={state.processed_total}"
-            f"{idle_str}, "
-            f"payload={payload_summary}"
-        )
+        # logger.debug(
+        # f"[{session_key}] obs_type={obs.obs_type.value}, "
+        # f"actor={obs.actor.actor_id}, "
+        # f"processed={state.processed_total}"
+        # f"{idle_str}, "
+        # f"payload={payload_summary}"
+        # )
 
     def _shrink_payload(self, payload, max_len: int = 160) -> str:
         """将 payload 截断为最多 max_len 字符，避免日志爆炸"""

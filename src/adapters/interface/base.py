@@ -9,6 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from loguru import logger
 from typing import Any, Optional, Protocol, Dict, Literal
 from ...input_bus import AsyncInputBus
 from ...schemas.observation import (
@@ -117,6 +118,7 @@ class BaseAdapter(ABC):
         self._running = True
         try:
             self._on_start()
+            logger.info(f"Adapter {self.name} started")
         except Exception as e:
             # 启动失败也要上报为 ALERT
             self._report_error(
@@ -126,6 +128,7 @@ class BaseAdapter(ABC):
                 severity="high",
             )
             self._running = False
+            logger.info(f"Adapter {self.name} error on start: {e}")
 
     def stop(self) -> None:
         """
@@ -136,6 +139,7 @@ class BaseAdapter(ABC):
             return
         try:
             self._on_stop()
+            logger.info(f"Adapter {self.name} stopped")
         except Exception as e:
             self._report_error(
                 error=e,
@@ -143,6 +147,7 @@ class BaseAdapter(ABC):
                 message="Adapter 停止失败 / Adapter stop failed",
                 severity="medium",
             )
+            logger.info(f"Adapter {self.name} error on stop: {e}")
         finally:
             self._running = False
             self._bus = None
@@ -180,11 +185,13 @@ class BaseAdapter(ABC):
           Emit observation synchronously (non-blocking).
         """
         if not self._running or self._bus is None:
+            logger.warning(f"Adapter {self.name} emit failed: adapter or bus not running")
             return
 
         try:
             obs.validate()
             result = self._bus.publish_nowait(obs)
+            logger.debug(f"Adapter {self.name} publish_nowait result: {result}")
 
             if result.ok:
                 self._last_seen_at = datetime.now(timezone.utc)
@@ -289,11 +296,12 @@ class BaseAdapter(ABC):
             evidence=evidence or EvidenceRef(),
             metadata={},
         )
+        logger.error(f"Adapter {self.name} reporting error: {message} | {payload_data}")
 
         # 尝试投递 alert：失败就吞掉（不递归）
         if self._running and self._bus is not None:
             try:
                 alert_obs.validate()
                 self._bus.publish_nowait(alert_obs)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Adapter {self.name} failed to publish alert: {e}")

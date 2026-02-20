@@ -1,5 +1,4 @@
 import asyncio
-import signal
 import sys
 from loguru import logger
 
@@ -8,22 +7,14 @@ from src.adapters.text_input_adapter import TextInputAdapter
 from src.adapters.timer_tick_adapter import TimerTickAdapter
 
 
-# 配置 loguru 日志
-logger.remove()
-logger.add(
-    sys.stderr,
-    level="INFO",
-    format="<green>{time:HH:mm:ss}</green> [<level>{level}</level>] <cyan>{name}</cyan>: <level>{message}</level>",
-    colorize=True,
-)
-
-
 async def main():
     """
     Core v0 演示入口：
     - 启动 Core 与 adapters
     - 支持 Ctrl+C 优雅退出
     """
+    logger.info("Main starting")
+
     # 创建 Core
     core = Core(
         bus_maxsize=1000,
@@ -46,6 +37,7 @@ async def main():
 
     core.add_adapter(text_adapter)
     core.add_adapter(timer_adapter)
+    logger.info("Adapters added: text_input, timer")
 
     # 演示：启动后自动投递几条消息
     async def demo_input():
@@ -63,20 +55,29 @@ async def main():
             timer_adapter.trigger(reason=f"demo_tick_{i}")
 
     demo_task = asyncio.create_task(demo_input())
+    logger.info("Demo input task created")
 
     # 运行 Core
     try:
-        logger.info("Starting Core v0...")
+        logger.info("Core run loop starting")
         await core.run_forever()
     except KeyboardInterrupt:
-        logger.info("Received KeyboardInterrupt")
+        logger.info("KeyboardInterrupt received in main()")
+        pass
     finally:
+        logger.info("Main shutting down")
         demo_task.cancel()
         await asyncio.gather(demo_task, return_exceptions=True)
-        logger.info("Main exit")
+        logger.info("Main stopped")
 
 
 if __name__ == "__main__":
+    # Configure loguru to output to stdout for better Windows compatibility
+    logger.remove()  # Remove default stderr handler
+    logger.add(sys.stdout, colorize=True, level="DEBUG")
+    
+    logger.info("Application starting")
+
     # Windows 下支持 Ctrl+C
     if sys.platform == "win32":
         # ProactorEventLoop 在 Windows 上更好地处理信号

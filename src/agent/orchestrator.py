@@ -71,16 +71,16 @@ class DefaultAgentOrchestrator:
             # ============================================================
             # Step 1: Planning
             # ============================================================
-            self.logger.debug(f"[Orchestrator] Planning for obs_id={req.obs.obs_id}")
+            # self.logger.debug(f"[Orchestrator] Planning for obs_id={req.obs.obs_id}")
             try:
                 info_plan, answer_spec = await self.planner.plan(req, gate_hint=req.gate_hint)
                 trace["steps"]["planning"] = {
                     "sources": info_plan.sources,
                     "budget": info_plan.budget,
                 }
-                self.logger.debug(f"[Orchestrator] Plan: sources={info_plan.sources}")
+                # self.logger.debug(f"[Orchestrator] Plan: sources={info_plan.sources}")
             except Exception as e:
-                self.logger.error(f"[Orchestrator] Planning failed: {e}")
+                # self.logger.error(f"[Orchestrator] Planning failed: {e}")
                 trace["steps"]["planning"] = {"error": str(e)}
                 return self._fallback_outcome(
                     req=req,
@@ -91,16 +91,16 @@ class DefaultAgentOrchestrator:
             # ============================================================
             # Step 2: Evidence Gathering
             # ============================================================
-            self.logger.debug(f"[Orchestrator] Gathering evidence for sources={info_plan.sources}")
+            # self.logger.debug(f"[Orchestrator] Gathering evidence for sources={info_plan.sources}")
             try:
                 evidence = await self.evidence_runner.gather(req, info_plan)
                 trace["steps"]["evidence"] = {
                     "items_count": len(evidence.items),
                     "stats": evidence.stats,
                 }
-                self.logger.debug(f"[Orchestrator] Gathered {len(evidence.items)} evidence items")
+                # self.logger.debug(f"[Orchestrator] Gathered {len(evidence.items)} evidence items")
             except Exception as e:
-                self.logger.error(f"[Orchestrator] Evidence gathering failed: {e}")
+                # self.logger.error(f"[Orchestrator] Evidence gathering failed: {e}")
                 trace["steps"]["evidence"] = {"error": str(e)}
                 return self._fallback_outcome(
                     req=req,
@@ -111,16 +111,16 @@ class DefaultAgentOrchestrator:
             # ============================================================
             # Step 3: Answering
             # ============================================================
-            self.logger.debug(f"[Orchestrator] Generating answer")
+            # self.logger.debug(f"[Orchestrator] Generating answer")
             try:
                 draft = await self.answerer.answer(req, evidence, answer_spec)
                 trace["steps"]["answering"] = {
                     "text_len": len(draft.text),
                     "meta": draft.meta,
                 }
-                self.logger.debug(f"[Orchestrator] Generated answer ({len(draft.text)} chars)")
+                # self.logger.debug(f"[Orchestrator] Generated answer ({len(draft.text)} chars)")
             except Exception as e:
-                self.logger.error(f"[Orchestrator] Answering failed: {e}")
+                # self.logger.error(f"[Orchestrator] Answering failed: {e}")
                 trace["steps"]["answering"] = {"error": str(e)}
                 return self._fallback_outcome(
                     req=req,
@@ -131,15 +131,15 @@ class DefaultAgentOrchestrator:
             # ============================================================
             # Step 4: Speaking
             # ============================================================
-            self.logger.debug(f"[Orchestrator] Rendering response observations")
+            # self.logger.debug(f"[Orchestrator] Rendering response observations")
             try:
                 emit_msgs = await self.speaker.render(req, draft)
                 trace["steps"]["speaking"] = {
                     "obs_count": len(emit_msgs),
                 }
-                self.logger.debug(f"[Orchestrator] Rendered {len(emit_msgs)} observation(s)")
+                # self.logger.debug(f"[Orchestrator] Rendered {len(emit_msgs)} observation(s)")
             except Exception as e:
-                self.logger.error(f"[Orchestrator] Speaking failed: {e}")
+                # self.logger.error(f"[Orchestrator] Speaking failed: {e}")
                 trace["steps"]["speaking"] = {"error": str(e)}
                 return self._fallback_outcome(
                     req=req,
@@ -150,15 +150,15 @@ class DefaultAgentOrchestrator:
             # ============================================================
             # Step 5: Post-processing
             # ============================================================
-            self.logger.debug(f"[Orchestrator] Post-processing")
+            # self.logger.debug(f"[Orchestrator] Post-processing")
             try:
                 emit_post = await self.post_processor.after_reply(req, draft, evidence)
                 trace["steps"]["post_processing"] = {
                     "obs_count": len(emit_post),
                 }
-                self.logger.debug(f"[Orchestrator] Post-processing generated {len(emit_post)} observation(s)")
+                # self.logger.debug(f"[Orchestrator] Post-processing generated {len(emit_post)} observation(s)")
             except Exception as e:
-                self.logger.error(f"[Orchestrator] Post-processing failed: {e}")
+                # self.logger.error(f"[Orchestrator] Post-processing failed: {e}")
                 trace["steps"]["post_processing"] = {"error": str(e)}
                 # 这一步如果失败，不影响主回复，只记录
                 emit_post = []
@@ -169,10 +169,10 @@ class DefaultAgentOrchestrator:
             trace["end_ts"] = time.time()
             trace["elapsed_ms"] = (trace["end_ts"] - trace["start_ts"]) * 1000
             
-            self.logger.debug(
-                f"[Orchestrator] Complete in {trace['elapsed_ms']:.1f}ms, "
-                f"emit {len(emit_msgs) + len(emit_post)} obs"
-            )
+            # self.logger.debug(
+            # f"[Orchestrator] Complete in {trace['elapsed_ms']:.1f}ms, "
+            # f"emit {len(emit_msgs) + len(emit_post)} obs"
+            # )
             
             return AgentOutcome(
                 emit=emit_msgs + emit_post,
@@ -182,7 +182,7 @@ class DefaultAgentOrchestrator:
         
         except Exception as e:
             # 捕获任何未预期的异常
-            self.logger.exception(f"[Orchestrator] Unexpected error: {e}")
+            # self.logger.exception(f"[Orchestrator] Unexpected error: {e}")
             return self._fallback_outcome(
                 req=req,
                 trace=trace,

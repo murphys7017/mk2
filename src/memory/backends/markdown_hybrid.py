@@ -10,17 +10,14 @@ from __future__ import annotations
 import json
 import yaml
 import hashlib
-import logging
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass, asdict
 from datetime import datetime
+from loguru import logger
 
 if TYPE_CHECKING:
     from ..backends.relational import SQLAlchemyBackend
-
-logger = logging.getLogger(__name__)
-
 
 # =============================================================================
 # 数据模型
@@ -104,7 +101,7 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
     try:
         frontmatter = yaml.safe_load(fm_text) or {}
     except yaml.YAMLError as e:
-        logger.warning(f"Failed to parse frontmatter: {e}")
+        # logger.warning(f"Failed to parse frontmatter: {e}")
         return {}, content
     
     if not isinstance(frontmatter, dict):
@@ -198,9 +195,9 @@ class MarkdownVaultHybrid:
         self._scan_and_sync()
         self._save_metadata()
         
-        logger.info(f"MarkdownVaultHybrid initialized: "
-                   f"{len(self._config_cache)} config files, "
-                   f"{len(self._knowledge_cache)} knowledge files")
+        # logger.info(f"MarkdownVaultHybrid initialized: "
+        # f"{len(self._config_cache)} config files, "
+        # f"{len(self._knowledge_cache)} knowledge files")
     
     # =========================================================================
     # 配置文件管理（全量注入）
@@ -284,7 +281,7 @@ class MarkdownVaultHybrid:
         if self.auto_sync and self.db_backend:
             self._sync_config_to_db(key, content, frontmatter, md5)
         
-        logger.debug(f"Config upserted: {key} (md5={md5[:8]}, version={version})")
+        # logger.debug(f"Config upserted: {key} (md5={md5[:8]}, version={version})")
     
     # =========================================================================
     # 知识库管理（碎片检索）
@@ -370,7 +367,7 @@ class MarkdownVaultHybrid:
         if self.auto_sync and self.db_backend:
             self._sync_knowledge_to_db(key, content, frontmatter, md5)
         
-        logger.debug(f"Knowledge upserted: {key} (md5={md5[:8]}, version={version})")
+        # logger.debug(f"Knowledge upserted: {key} (md5={md5[:8]}, version={version})")
     
     def delete_knowledge(self, key: str) -> bool:
         """删除知识条目"""
@@ -396,7 +393,7 @@ class MarkdownVaultHybrid:
         if self.db_backend:
             self._delete_knowledge_from_db(key)
         
-        logger.debug(f"Knowledge deleted: {key}")
+        # logger.debug(f"Knowledge deleted: {key}")
         return True
     
     # =========================================================================
@@ -415,9 +412,9 @@ class MarkdownVaultHybrid:
                 path: FileMetadata.from_dict(meta)
                 for path, meta in data.items()
             }
-            logger.debug(f"Loaded metadata: {len(self.metadata)} files")
+            # logger.debug(f"Loaded metadata: {len(self.metadata)} files")
         except Exception as e:
-            logger.error(f"Failed to load metadata: {e}")
+            # logger.error(f"Failed to load metadata: {e}")
             self.metadata = {}
     
     def _save_metadata(self) -> None:
@@ -432,7 +429,7 @@ class MarkdownVaultHybrid:
                 encoding="utf-8"
             )
         except Exception as e:
-            logger.error(f"Failed to save metadata: {e}")
+            # logger.error(f"Failed to save metadata: {e}")
     
     def _scan_and_sync(self) -> None:
         """扫描所有文件，识别变化并同步"""
@@ -470,12 +467,12 @@ class MarkdownVaultHybrid:
         for stale_path in stale_paths:
             del self.metadata[stale_path]
         if stale_paths:
-            logger.info("Pruned %d stale metadata entries", len(stale_paths))
+            # logger.info(f"Pruned {len(stale_paths)} stale metadata entries")
         
         # 同步变化的文件
         if changed_files and self.auto_sync and self.db_backend:
             synced_at = datetime.now().timestamp()
-            logger.info(f"Syncing {len(changed_files)} changed files to database...")
+            # logger.info(f"Syncing {len(changed_files)} changed files to database...")
             for file_path, file_type, md5 in changed_files:
                 if file_type == "config":
                     key = self._path_to_config_key(file_path)
@@ -527,7 +524,7 @@ class MarkdownVaultHybrid:
                 file_type="config",
             )
         except Exception as e:
-            logger.error(f"Failed to load config file {file_path}: {e}")
+            # logger.error(f"Failed to load config file {file_path}: {e}")
     
     def _load_knowledge_file(
         self,
@@ -566,7 +563,7 @@ class MarkdownVaultHybrid:
                 file_type="knowledge",
             )
         except Exception as e:
-            logger.error(f"Failed to load knowledge file {file_path}: {e}")
+            # logger.error(f"Failed to load knowledge file {file_path}: {e}")
     
     # =========================================================================
     # 路径转换
@@ -689,9 +686,9 @@ class MarkdownVaultHybrid:
                 "md5": md5,
             }
             self.db_backend.save_config_dict(config_dict)
-            logger.debug(f"Synced config to DB: {key}")
+            # logger.debug(f"Synced config to DB: {key}")
         except Exception as e:
-            logger.warning(f"Failed to sync config to DB: {key}, error: {e}")
+            # logger.warning(f"Failed to sync config to DB: {key}, error: {e}")
     
     def _sync_knowledge_to_db(
         self,
@@ -713,9 +710,9 @@ class MarkdownVaultHybrid:
                 "md5": md5,
             }
             self.db_backend.save_knowledge_dict(knowledge_dict)
-            logger.debug(f"Synced knowledge to DB: {key}")
+            # logger.debug(f"Synced knowledge to DB: {key}")
         except Exception as e:
-            logger.warning(f"Failed to sync knowledge to DB: {key}, error: {e}")
+            # logger.warning(f"Failed to sync knowledge to DB: {key}, error: {e}")
     
     def _delete_knowledge_from_db(self, key: str) -> None:
         """从数据库删除知识条目"""
@@ -724,9 +721,9 @@ class MarkdownVaultHybrid:
 
         try:
             deleted = self.db_backend.delete_knowledge_dict(key)
-            logger.debug("Deleted knowledge from DB: %s (deleted=%s)", key, deleted)
+            # logger.debug(f"Deleted knowledge from DB: {key} (deleted={deleted})")
         except Exception as e:
-            logger.warning("Failed to delete knowledge from DB: %s, error: %s", key, e)
+            # logger.warning(f"Failed to delete knowledge from DB: {key}, error: {e}")
     
     # =========================================================================
     # 工具方法
@@ -748,7 +745,7 @@ class MarkdownVaultHybrid:
         self._knowledge_cache.clear()
         self._scan_and_sync()
         self._save_metadata()
-        logger.info("Vault reloaded")
+        # logger.info("Vault reloaded")
     
     def get_stats(self) -> dict:
         """获取统计信息"""

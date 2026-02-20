@@ -1,4 +1,7 @@
-from .logging_config import setup_logging
+"""src package."""
 
-# Default project-wide logging configuration.
-setup_logging()
+from loguru import logger
+
+# Disable all default log sinks project-wide.
+# User will re-introduce logging later with explicit configuration.
+logger.remove()

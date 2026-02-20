@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import json
 import time
-import logging
 import threading
 import atexit
 import uuid
 from pathlib import Path
 from collections import deque
 from typing import TYPE_CHECKING, Optional, Any
+from loguru import logger
 
 from .models import EventRecord, MemoryItem, TurnRecord
 
@@ -22,9 +22,6 @@ if TYPE_CHECKING:
     from .backends.relational import SQLAlchemyBackend
     from .backends.vector import VectorIndex, EmbeddingProvider
     from .backends.markdown_hybrid import MarkdownVaultHybrid
-
-logger = logging.getLogger(__name__)
-
 
 class MemoryService:
     """
@@ -122,8 +119,9 @@ class MemoryService:
         
         # 注册程序退出处理：确保所有缓冲区数据都被持久化
         atexit.register(self.close)
-        logger.info("MemoryService initialized (buffer_size=%d, flush_interval=%dms)",
-                    buffer_size, flush_interval_ms)
+        # logger.info(
+        # f"MemoryService initialized (buffer_size={buffer_size}, flush_interval={flush_interval_ms}ms)"
+        # )
     
     # ===== 事件管理 =====
     
@@ -162,7 +160,7 @@ class MemoryService:
         with self._buffer_lock:
             self._event_buffer.append(event_dict)
         
-        logger.debug(f"Event buffered: {event.event_id} (buffer_size={len(self._event_buffer)})")
+        # logger.debug(f"Event buffered: {event.event_id} (buffer_size={len(self._event_buffer)})")
         return event
     
     def get_event(self, event_id: str) -> Optional[EventRecord]:
@@ -264,7 +262,7 @@ class MemoryService:
         if 'meta' in turn_dict:
             turn_dict['meta_json'] = json.dumps(turn_dict.pop('meta'))
         self.db_backend.save_turn_dict(turn_dict)
-        logger.debug(f"Turn started: {turn.turn_id}")
+        # logger.debug(f"Turn started: {turn.turn_id}")
         return turn
     
     def finish_turn(
@@ -282,7 +280,7 @@ class MemoryService:
             final_output_obs_id=final_output_obs_id,
             finished_ts=time.time()
         )
-        logger.debug(f"Turn finished: {turn_id}")
+        # logger.debug(f"Turn finished: {turn_id}")
 
     
     def get_recent_turns(
@@ -323,26 +321,26 @@ class MemoryService:
     ) -> list[MemoryItem]:
         """获取指定 scope 的记忆条目（仅兼容旧版）"""
         if self.markdown_store is None:
-            logger.warning("get_items() is deprecated with MarkdownVaultHybrid. Use get_config() instead.")
+            # logger.warning("get_items() is deprecated with MarkdownVaultHybrid. Use get_config() instead.")
             return []
         return self.markdown_store.list(scope, kind)
     
     def get_item(self, scope: str, kind: str, key: str) -> Optional[MemoryItem]:
         """获取单个记忆条目（仅兼容旧版）"""
         if self.markdown_store is None:
-            logger.warning("get_item() is deprecated with MarkdownVaultHybrid. Use get_config() instead.")
+            # logger.warning("get_item() is deprecated with MarkdownVaultHybrid. Use get_config() instead.")
             return None
         return self.markdown_store.get(scope, kind, key)
     
     def upsert_item(self, item: MemoryItem) -> None:
         """新增或更新记忆条目（仅兼容旧版）"""
         if self.markdown_store is None:
-            logger.warning("upsert_item() is deprecated with MarkdownVaultHybrid. Use upsert_config() instead.")
+            # logger.warning("upsert_item() is deprecated with MarkdownVaultHybrid. Use upsert_config() instead.")
             return
         self.markdown_store.upsert(item)
         if self.vector_index and self.embedding_provider:
             self._index_item(item)
-        logger.debug(f"Item upserted: {item.scope}/{item.kind}/{item.key}")
+        # logger.debug(f"Item upserted: {item.scope}/{item.kind}/{item.key}")
     
     def upsert_items(self, items: list[MemoryItem]) -> None:
         """批量新增或更新记忆条目（仅兼容旧版）"""
@@ -352,7 +350,7 @@ class MemoryService:
     def delete_item(self, scope: str, kind: str, key: str) -> bool:
         """删除记忆条目（仅兼容旧版）"""
         if self.markdown_store is None:
-            logger.warning("delete_item() is deprecated with MarkdownVaultHybrid.")
+            # logger.warning("delete_item() is deprecated with MarkdownVaultHybrid.")
             return False
         result = self.markdown_store.delete(scope, kind, key)
         if self.vector_index:
@@ -368,7 +366,7 @@ class MemoryService:
     ) -> list[MemoryItem]:
         """搜索记忆条目（仅兼容旧版）"""
         if self.markdown_store is None:
-            logger.warning("search_items() is deprecated with MarkdownVaultHybrid.")
+            # logger.warning("search_items() is deprecated with MarkdownVaultHybrid.")
             return []
         if self.vector_index and self.embedding_provider:
             return self._search_by_vector(query, scope, topk)
@@ -390,14 +388,14 @@ class MemoryService:
     def upsert_system_prompt(self, content: str, metadata: Optional[dict] = None) -> None:
         """更新系统 prompt"""
         if not self.markdown_vault:
-            logger.warning("upsert_system_prompt() requires MarkdownVaultHybrid")
+            # logger.warning("upsert_system_prompt() requires MarkdownVaultHybrid")
             return
         self.markdown_vault.upsert_config("system", content, metadata)
     
     def upsert_user_profile(self, user_id: str, content: str, metadata: Optional[dict] = None) -> None:
         """更新用户配置"""
         if not self.markdown_vault:
-            logger.warning("upsert_user_profile() requires MarkdownVaultHybrid")
+            # logger.warning("upsert_user_profile() requires MarkdownVaultHybrid")
             return
         self.markdown_vault.upsert_config(f"user:{user_id}", content, metadata)
     
@@ -406,7 +404,7 @@ class MemoryService:
         if self.markdown_vault:
             return self.markdown_vault.get_config(key)
         else:
-            logger.warning("get_config() requires MarkdownVaultHybrid")
+            # logger.warning("get_config() requires MarkdownVaultHybrid")
             return None
     
     def upsert_config(self, key: str, content: str, metadata: Optional[dict] = None) -> None:
@@ -414,19 +412,19 @@ class MemoryService:
         if self.markdown_vault:
             self.markdown_vault.upsert_config(key, content, metadata)
         else:
-            logger.warning("upsert_config() requires MarkdownVaultHybrid")
+            # logger.warning("upsert_config() requires MarkdownVaultHybrid")
     
     # ===== 向量索引管理 =====
     
     def reindex_all_items(self) -> int:
         """重建所有项的向量索引"""
         if not self.vector_index or not self.embedding_provider:
-            logger.warning("Vector index not available, skipping reindex")
+            # logger.warning("Vector index not available, skipping reindex")
             return 0
         if self.markdown_store is None:
-            logger.warning(
-                "reindex_all_items() is not available until legacy store or future vectorization is enabled"
-            )
+            # logger.warning(
+            # "reindex_all_items() is not available until legacy store or future vectorization is enabled"
+            # )
             return 0
         
         self.vector_index.clear()
@@ -437,7 +435,7 @@ class MemoryService:
                 self._index_item(item)
                 count += 1
         
-        logger.info(f"Reindexed {count} items")
+        # logger.info(f"Reindexed {count} items")
         return count
     
     # ===== 私有方法 =====
@@ -461,13 +459,13 @@ class MemoryService:
     
     def _background_flush(self) -> None:
         """后台线程：定期将缓冲区事件持久化到数据库"""
-        logger.debug("Background flush thread started")
+        # logger.debug("Background flush thread started")
         try:
             while not self._stop_flushing.wait(self._flush_interval):
                 self._flush_event_buffer()
                 self._retry_failed_events()
         finally:
-            logger.debug("Background flush thread stopped")
+            # logger.debug("Background flush thread stopped")
     
     def _flush_event_buffer(self) -> None:
         """将事件缓冲区内的所有事件持久化到数据库"""
@@ -484,7 +482,7 @@ class MemoryService:
             try:
                 self.db_backend.save_event_dict(event_dict)
             except Exception as e:
-                logger.error(f"Failed to flush event {event_dict.get('event_id')}: {e}")
+                # logger.error(f"Failed to flush event {event_dict.get('event_id')}: {e}")
                 self._enqueue_failed_event(
                     {
                         "event_dict": event_dict,
@@ -495,7 +493,7 @@ class MemoryService:
                 )
         
         if events_to_flush:
-            logger.debug(f"Flushed {len(events_to_flush)} events to database")
+            # logger.debug(f"Flushed {len(events_to_flush)} events to database")
 
     def _retry_failed_events(self) -> int:
         """重试失败事件持久化，返回本轮成功数量。"""
@@ -530,14 +528,13 @@ class MemoryService:
                 self._enqueue_failed_event(record)
         if dead_letters:
             self._append_records_to_file(dead_letters, self._dead_letter_file)
-            logger.error(
-                "Moved %d failed events to dead-letter file after max retries (%d)",
-                len(dead_letters),
-                self._failed_events_max_retries,
-            )
+            # logger.error(
+            # f"Moved {len(dead_letters)} failed events to dead-letter file "
+            # f"after max retries ({self._failed_events_max_retries})"
+            # )
         
         if recovered:
-            logger.info("Recovered %d previously failed events", recovered)
+            # logger.info(f"Recovered {recovered} previously failed events")
         return recovered
 
     def _load_failed_events_from_disk(self) -> None:
@@ -571,7 +568,7 @@ class MemoryService:
                             loaded += 1
                 dump_file.unlink(missing_ok=True)
         except Exception as e:
-            logger.warning("Failed to load failed events dump: %s", e)
+            # logger.warning(f"Failed to load failed events dump: {e}")
             return
 
         overflow_records: list[dict] = []
@@ -584,13 +581,12 @@ class MemoryService:
                     del self._failed_events[:overflow]
         if overflow_records:
             self._append_records_to_file(overflow_records, self._failed_events_file)
-            logger.warning(
-                "Failed-event queue warm-load overflow: spilled %d records to %s",
-                len(overflow_records),
-                self._failed_events_file,
-            )
+            # logger.warning(
+            # f"Failed-event queue warm-load overflow: spilled {len(overflow_records)} records "
+            # f"to {self._failed_events_file}",
+            # )
         if loaded:
-            logger.warning("Loaded %d failed events from %s", loaded, self._failed_events_file)
+            # logger.warning(f"Loaded {loaded} failed events from {self._failed_events_file}")
 
     def _persist_failed_events_to_disk(self) -> None:
         """将失败事件落盘，避免进程退出后数据丢失。"""
@@ -599,11 +595,9 @@ class MemoryService:
         if not records:
             return
         self._append_records_to_file(records, self._failed_events_file)
-        logger.warning(
-            "Persisted %d failed events to %s",
-            len(records),
-            self._failed_events_file,
-        )
+        # logger.warning(
+        # f"Persisted {len(records)} failed events to {self._failed_events_file}",
+        # )
 
     def _enqueue_failed_event(self, record: dict[str, Any]) -> None:
         """将失败事件加入内存队列；超限则分批落盘。"""
@@ -620,11 +614,10 @@ class MemoryService:
                 del self._failed_events[:spill_count]
         if overflow_records:
             self._append_records_to_file(overflow_records, self._failed_events_file)
-            logger.warning(
-                "Failed-event queue overflow: spilled %d records to %s",
-                len(overflow_records),
-                self._failed_events_file,
-            )
+            # logger.warning(
+            # f"Failed-event queue overflow: spilled {len(overflow_records)} records "
+            # f"to {self._failed_events_file}",
+            # )
 
     def _append_records_to_file(self, records: list[dict], file_path: Path) -> None:
         """追加记录到指定 dump 文件，必要时执行轮转。"""
@@ -640,7 +633,7 @@ class MemoryService:
                     for line in lines:
                         f.write(line)
             except Exception as e:
-                logger.error("Failed to append failed-event records to %s: %s", file_path, e)
+                # logger.error(f"Failed to append failed-event records to {file_path}: {e}")
 
     def _rotate_dump_file_if_needed(self, file_path: Path, incoming_bytes: int) -> None:
         """当文件超出阈值时执行轮转。"""
@@ -662,7 +655,7 @@ class MemoryService:
             if file_path.exists():
                 file_path.replace(self._rotated_dump_path(file_path, 1))
         except Exception as e:
-            logger.error("Failed to rotate dump file %s: %s", file_path, e)
+            # logger.error(f"Failed to rotate dump file {file_path}: {e}")
 
     @staticmethod
     def _rotated_dump_path(base_file: Path, idx: int) -> Path:
@@ -764,12 +757,12 @@ class MemoryService:
             # 准确反馈状态
             if self._failed_events:
                 self._persist_failed_events_to_disk()
-                logger.warning(
-                    f"{len(self._failed_events)} events failed to persist "
-                    f"(details dumped to {self._failed_events_file})"
-                )
+                # logger.warning(
+                # f"{len(self._failed_events)} events failed to persist "
+                # f"(details dumped to {self._failed_events_file})"
+                # )
             else:
-                logger.info("All buffered events flushed to database")
+                # logger.info("All buffered events flushed to database")
         
         self.db_backend.close()
-        logger.info("MemoryService closed")
+        # logger.info("MemoryService closed")

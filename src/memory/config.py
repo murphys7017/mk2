@@ -169,6 +169,5 @@ class MemoryConfigProvider:
             cfg = MemoryConfig.from_yaml(self._path)
             self._ref = cfg
             return True
-        except Exception as e:
-            print(f"Memory config reload failed: {e}")
+        except Exception:
             return False

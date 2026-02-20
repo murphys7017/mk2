@@ -24,10 +24,6 @@ from src.schemas.observation import (
 )
 
 
-# 配置 loguru 日志
-logger.remove()
-logger.add(sys.stderr, level="DEBUG")
-
 
 @pytest.fixture
 def orchestrator():

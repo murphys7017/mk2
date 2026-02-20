@@ -41,10 +41,10 @@ class GateConfigProvider:
             self._ref = cfg
             self._last_stamp = self._safe_file_stamp()
             self._last_hash = self._safe_file_hash()
-            logger.info("Gate config reloaded")
+            # logger.info("Gate config reloaded")
             return True
         except Exception as e:
-            logger.warning(f"Gate config reload failed: {e}")
+            # logger.warning(f"Gate config reload failed: {e}")
             return False
 
     def update_overrides(self, **kwargs) -> bool:
@@ -57,7 +57,7 @@ class GateConfigProvider:
             self._ref = updated
             return True
         except Exception as e:
-            logger.warning(f"Gate overrides update failed: {e}")
+            # logger.warning(f"Gate overrides update failed: {e}")
             return False
 
     def _safe_file_stamp(self) -> Optional[Tuple[int, int]]:
@@ -65,7 +65,7 @@ class GateConfigProvider:
             stat = self._path.stat()
             return stat.st_mtime_ns, stat.st_size
         except Exception as e:
-            logger.warning(f"Gate config stat failed: {e}")
+            # logger.warning(f"Gate config stat failed: {e}")
             return None
 
     def _safe_file_hash(self) -> Optional[str]:
@@ -73,5 +73,5 @@ class GateConfigProvider:
             data = self._path.read_bytes()
             return hashlib.sha256(data).hexdigest()
         except Exception as e:
-            logger.warning(f"Gate config hash failed: {e}")
+            # logger.warning(f"Gate config hash failed: {e}")
             return None

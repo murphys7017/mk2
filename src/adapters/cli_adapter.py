@@ -55,18 +55,18 @@ class CliInputAdapter(BaseAdapter):
 
     def _on_start(self) -> None:
         """启动 CLI 交互循环作为后台任务"""
-        logger.info("\n" + "=" * 60)
-        logger.info("🎬 E2E Demo CLI 已启动 (CLI Input Adapter)")
-        logger.info("=" * 60)
-        logger.info("支持的命令:")
-        logger.info("  <text>                              - 发送文本到当前 session")
-        logger.info("  /session <key>                      - 切换 session_key")
-        logger.info("  /tick                               - 注入 system tick")
-        logger.info("  /alert <kind>                       - 注入 ALERT (e.g., drop_burst)")
-        logger.info("  /suggest force_low_model=0|1 ttl=<sec> - 注入 tuning_suggestion")
-        logger.info("  /trace on|off                       - 开关 gate trace")
-        logger.info("  /quit                               - 退出")
-        logger.info("=" * 60 + "\n")
+        # logger.info("\n" + "=" * 60)
+        # logger.info("🎬 E2E Demo CLI 已启动 (CLI Input Adapter)")
+        # logger.info("=" * 60)
+        # logger.info("支持的命令:")
+        # logger.info("  <text>                              - 发送文本到当前 session")
+        # logger.info("  /session <key>                      - 切换 session_key")
+        # logger.info("  /tick                               - 注入 system tick")
+        # logger.info("  /alert <kind>                       - 注入 ALERT (e.g., drop_burst)")
+        # logger.info("  /suggest force_low_model=0|1 ttl=<sec> - 注入 tuning_suggestion")
+        # logger.info("  /trace on|off                       - 开关 gate trace")
+        # logger.info("  /quit                               - 退出")
+        # logger.info("=" * 60 + "\n")
 
         # 创建后台 CLI 任务
         if self._cli_task is None or self._cli_task.done():
@@ -96,19 +96,19 @@ class CliInputAdapter(BaseAdapter):
 
             except EOFError:
                 # Ctrl+D
-                logger.info("\n[CLI] EOF received, exiting...")
+                # logger.info("\n[CLI] EOF received, exiting...")
                 break
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.exception(f"[CLI:ERROR] {e}")
+                # logger.exception(f"[CLI:ERROR] {e}")
 
     async def _process_command(self, user_input: str) -> None:
         """处理用户输入命令"""
         user_input = user_input.strip()
 
         if user_input.startswith("/quit"):
-            logger.info("[CLI] /quit detected, shutting down...")
+            # logger.info("[CLI] /quit detected, shutting down...")
             # 触发 stop_event（不用 sys.exit）
             if self._stop_event:
                 self._stop_event.set()
@@ -129,9 +129,9 @@ class CliInputAdapter(BaseAdapter):
             new_session = user_input[9:].strip()
             if new_session:
                 self.current_session_key = new_session
-                logger.info(f"[CLI] Switched to session: {self.current_session_key}")
+                # logger.info(f"[CLI] Switched to session: {self.current_session_key}")
             else:
-                logger.info("[CLI] Usage: /session <key>")
+                # logger.info("[CLI] Usage: /session <key>")
 
         elif user_input == "/tick":
             await self._inject_observation(
@@ -139,7 +139,7 @@ class CliInputAdapter(BaseAdapter):
                 session_key="system",
                 payload=None,
             )
-            logger.info("[CLI] Injected SCHEDULE (system tick) to system session")
+            # logger.info("[CLI] Injected SCHEDULE (system tick) to system session")
 
         elif user_input.startswith("/alert "):
             alert_kind = user_input[7:].strip()
@@ -154,9 +154,9 @@ class CliInputAdapter(BaseAdapter):
                         data={"kind": alert_kind},
                     ),
                 )
-                logger.info(f"[CLI] Injected ALERT: {alert_kind}")
+                # logger.info(f"[CLI] Injected ALERT: {alert_kind}")
             else:
-                logger.info("[CLI] Usage: /alert <kind>")
+                # logger.info("[CLI] Usage: /alert <kind>")
 
         elif user_input.startswith("/suggest "):
             suggestion = user_input[9:].strip()
@@ -170,20 +170,20 @@ class CliInputAdapter(BaseAdapter):
                         data=data,
                     ),
                 )
-                logger.info(f"[CLI] Injected CONTROL(tuning_suggestion): {data}")
+                # logger.info(f"[CLI] Injected CONTROL(tuning_suggestion): {data}")
             except ValueError as e:
-                logger.warning(f"[CLI:ERROR] {e}")
+                # logger.warning(f"[CLI:ERROR] {e}")
 
         elif user_input.startswith("/trace "):
             trace_cmd = user_input[7:].strip()
             if trace_cmd == "on":
                 self.trace_enabled = True
-                logger.info("[CLI] Gate trace enabled")
+                # logger.info("[CLI] Gate trace enabled")
             elif trace_cmd == "off":
                 self.trace_enabled = False
-                logger.info("[CLI] Gate trace disabled")
+                # logger.info("[CLI] Gate trace disabled")
             else:
-                logger.info("[CLI] Usage: /trace on|off")
+                # logger.info("[CLI] Usage: /trace on|off")
 
         else:
             # 普通文本 -> 发送到当前 session
@@ -194,7 +194,7 @@ class CliInputAdapter(BaseAdapter):
                     text=user_input,
                 ),
             )
-            logger.info(f"[CLI] Sent message to session '{self.current_session_key}'")
+            # logger.info(f"[CLI] Sent message to session '{self.current_session_key}'")
 
     def _parse_suggest_params(self, params_str: str) -> dict:
         """
@@ -282,7 +282,7 @@ class CliInputAdapter(BaseAdapter):
                 "timestamp": obs.timestamp.isoformat() if obs.timestamp else None,
             }
             import json
-            logger.debug(f"[ADAPTER] {json.dumps(obs_data, ensure_ascii=False)}")
+            # logger.debug(f"[ADAPTER] {json.dumps(obs_data, ensure_ascii=False)}")
             
             result = self._bus.publish_nowait(obs)
 
@@ -301,9 +301,9 @@ class CliInputAdapter(BaseAdapter):
                 if queue_size is not None:
                     bus_data["queue_size"] = queue_size
                 
-                logger.debug(f"[BUS] {json.dumps(bus_data, ensure_ascii=False)}")
+                # logger.debug(f"[BUS] {json.dumps(bus_data, ensure_ascii=False)}")
             else:
-                logger.warning(f"[CLI:WARN] Failed to publish obs: {result.reason}")
+                # logger.warning(f"[CLI:WARN] Failed to publish obs: {result.reason}")
 
         except Exception as e:
-            logger.exception(f"[CLI:ERROR] Observation injection failed: {type(e).__name__}: {e}")
+            # logger.exception(f"[CLI:ERROR] Observation injection failed: {type(e).__name__}: {e}")

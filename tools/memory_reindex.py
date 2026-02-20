@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import sys
 import argparse
-import logging
 from pathlib import Path
 
 # 添加项目根目录到 Python 路径
@@ -22,12 +21,16 @@ from src.memory.backends.vector import InMemoryVectorIndex, DeterministicEmbeddi
 from src.memory.service import MemoryService
 
 
-# 设置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+def _info(msg: str) -> None:
+    return
+
+
+def _warn(msg: str) -> None:
+    return
+
+
+def _error(msg: str) -> None:
+    return
 
 
 def create_memory_service(config_path: str | Path) -> MemoryService:
@@ -56,7 +59,7 @@ def create_memory_service(config_path: str | Path) -> MemoryService:
             vector_index = InMemoryVectorIndex(embedding_provider)
         # 其他向量库的实现可以在这里添加
         else:
-            logger.warning(f"Vector index type '{config.vector.type}' not yet implemented, using memory")
+            _warn(f"Vector index type '{config.vector.type}' not yet implemented, using memory")
             embedding_provider = DeterministicEmbeddingProvider(
                 dim=config.vector.embedding.dimension
             )
@@ -125,33 +128,33 @@ def reindex(config_path: str | Path, force: bool = False) -> int:
     Returns:
         重建的项数
     """
-    logger.info(f"Loading config from {config_path}")
+    _info(f"Loading config from {config_path}")
     
     try:
         service = create_memory_service(config_path)
     except Exception as e:
-        logger.error(f"Failed to create MemoryService: {e}")
+        _error(f"Failed to create MemoryService: {e}")
         return 0
     
     # 如果向量索引未启用，提示
     if not service.vector_index and not force:
-        logger.info("Vector index not enabled, skipping reindex")
-        logger.info("Use --force to reindex anyway (to in-memory index)")
+        _info("Vector index not enabled, skipping reindex")
+        _info("Use --force to reindex anyway (to in-memory index)")
         service.close()
         return 0
     
     if not service.vector_index:
-        logger.warning("Vector index not available, reindex skipped")
+        _warn("Vector index not available, reindex skipped")
         service.close()
         return 0
     
-    logger.info("Starting reindex...")
+    _info("Starting reindex...")
     service.vector_index.clear()
     count = 0
     for item_id, content, metadata in _iter_vault_documents(service):
         service.vector_index.upsert(item_id, content, metadata)
         count += 1
-    logger.info(f"Reindexed {count} items successfully")
+    _info(f"Reindexed {count} items successfully")
     
     service.close()
     return count
@@ -168,19 +171,19 @@ def list_items(config_path: str | Path, scope: str | None = None) -> int:
     Returns:
         项数
     """
-    logger.info(f"Loading config from {config_path}")
+    _info(f"Loading config from {config_path}")
     
     try:
         service = create_memory_service(config_path)
     except Exception as e:
-        logger.error(f"Failed to create MemoryService: {e}")
+        _error(f"Failed to create MemoryService: {e}")
         return 0
     
-    logger.info("Listing items...")
+    _info("Listing items...")
 
     vault = service.markdown_vault
     if not vault:
-        logger.warning("Markdown vault unavailable")
+        _warn("Markdown vault unavailable")
         service.close()
         return 0
 
@@ -191,23 +194,23 @@ def list_items(config_path: str | Path, scope: str | None = None) -> int:
     list_knowledge = normalized_scope in ("", "knowledge", "kb")
 
     if normalized_scope and not (list_configs or list_knowledge):
-        logger.warning("Unsupported scope '%s'. Use: config / knowledge / kb", scope)
+        _warn(f"Unsupported scope '{scope}'. Use: config / knowledge / kb")
 
     if list_configs:
         config_cache = getattr(vault, "_config_cache", {})
         config_keys = sorted(config_cache.keys())
-        logger.info(f"  config: {len(config_keys)} items")
+        _info(f"  config: {len(config_keys)} items")
         for key in config_keys:
             content = vault.get_config(key) or ""
-            logger.info(f"    - config/{key}: {content[:50]}")
+            _info(f"    - config/{key}: {content[:50]}")
         total += len(config_keys)
 
     if list_knowledge:
         knowledge_keys = sorted(vault.list_knowledge())
-        logger.info(f"  knowledge: {len(knowledge_keys)} items")
+        _info(f"  knowledge: {len(knowledge_keys)} items")
         for key in knowledge_keys:
             content = vault.get_knowledge(key) or ""
-            logger.info(f"    - knowledge/{key}: {content[:50]}")
+            _info(f"    - knowledge/{key}: {content[:50]}")
         total += len(knowledge_keys)
     
     service.close()
