@@ -10,7 +10,7 @@ from src.agent.answerer import LLMAnswerer
 from src.agent.types import AgentRequest, AnswerSpec, EvidencePack
 from src.gate.types import GateAction, GateDecision, Scene
 from src.schemas.observation import Actor, MessagePayload, Observation, ObservationType
-from src.session_state import SessionState
+from src.session_router import SessionState
 
 
 class SlowGateway:

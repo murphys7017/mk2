@@ -14,7 +14,7 @@ from src.agent.orchestrator import DefaultAgentOrchestrator
 from src.agent.answerer import StubAnswerer
 from src.agent.types import AgentRequest
 from src.gate.types import GateDecision, Scene, GateAction
-from src.session_state import SessionState
+from src.session_router import SessionState
 from src.schemas.observation import (
     Observation,
     ObservationType,

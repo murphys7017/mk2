@@ -28,31 +28,22 @@ async def main():
     )
 
     # 添加 adapters
-    text_adapter = TextInputAdapter(name="text_input", default_session_key="dm:local")
-    timer_adapter = TimerTickAdapter(
-        name="timer",
-        schedule_id="heartbeat",
-        session_key="system",
-    )
-
+    text_adapter = TextInputAdapter()
     core.add_adapter(text_adapter)
-    core.add_adapter(timer_adapter)
-    logger.info("Adapters added: text_input, timer")
 
     # 演示：启动后自动投递几条消息
     async def demo_input():
         """演示：模拟一些输入"""
         await asyncio.sleep(0.5)  # 等待 Core 启动
+        actor_id = "demo_user"
+        session_key = "dm:demo_user"
+        while True:
+            text = input(">:")
+        
 
-        # 投递几条用户消息
-        text_adapter.ingest_text("Hello!", actor_id="alice", session_key="dm:alice")
-        text_adapter.ingest_text("Hi there", actor_id="bob", session_key="dm:bob")
-        text_adapter.ingest_text("How are you?", actor_id="alice", session_key="dm:alice")
+            # 投递几条用户消息
+            text_adapter.ingest_text(text, actor_id=actor_id, session_key=session_key)
 
-        # 触发 timer tick（会进入 system session）
-        for i in range(3):
-            await asyncio.sleep(1.0)
-            timer_adapter.trigger(reason=f"demo_tick_{i}")
 
     demo_task = asyncio.create_task(demo_input())
     logger.info("Demo input task created")

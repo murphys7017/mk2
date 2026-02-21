@@ -14,8 +14,7 @@ from typing import Dict, List, Optional, Set, TYPE_CHECKING
 from loguru import logger
 
 from .input_bus import AsyncInputBus
-from .session_router import SessionRouter, SessionInbox
-from .session_state import SessionState
+from .session_router import SessionRouter, SessionInbox, SessionState
 from .schemas.observation import (
     Observation,
     ObservationType,
@@ -28,7 +27,7 @@ from .gate import DefaultGate
 from .gate.types import GateAction, GateContext, GateHint
 from .config_provider import GateConfigProvider
 from .system_reflex import SystemReflexController, ReflexConfig
-from .agent import DefaultAgentOrchestrator
+from .agent import AgentQueen
 from .agent.types import AgentRequest
 
 if TYPE_CHECKING:
@@ -102,7 +101,7 @@ class Core:
         min_sessions_to_gc: int = 1,
         gate: Optional[DefaultGate] = None,
         gate_config_provider: Optional[GateConfigProvider] = None,
-        agent_orchestrator: Optional[DefaultAgentOrchestrator] = None,
+        agent_queen: Optional[AgentQueen] = None,
         enable_memory: bool = True,
         memory_config_path: str = "config/memory.yaml",
         memory_service: Optional[MemoryService] = None,
@@ -141,7 +140,7 @@ class Core:
         )
 
         # Agent orchestrator
-        self.agent_orchestrator = agent_orchestrator or DefaultAgentOrchestrator()
+        self.agent_queen = agent_queen or AgentQueen()
         self.memory_service = memory_service
         if self.memory_service is None and enable_memory:
             self.memory_service = self._init_default_memory_service(memory_config_path)
@@ -816,7 +815,7 @@ class Core:
                 )
                 
                 # 调用 agent orchestrator（async）
-                agent_outcome = await self.agent_orchestrator.handle(agent_req)
+                agent_outcome = await self.agent_queen.handle(agent_req)
                 
                 # 将 agent 的 emit 投递回 bus
                 for emit_obs in agent_outcome.emit:

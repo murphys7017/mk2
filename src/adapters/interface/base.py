@@ -191,6 +191,7 @@ class BaseAdapter(ABC):
         try:
             obs.validate()
             result = self._bus.publish_nowait(obs)
+            logger.debug(f"Adapter {self.name} emit observation: {obs.obs_type} | {obs.payload} | publish result: {result}")
             logger.debug(f"Adapter {self.name} publish_nowait result: {result}")
 
             if result.ok:

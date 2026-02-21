@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Literal
 
 from ..schemas.observation import Observation
 from ..gate.types import GateDecision, GateHint
-from ..session_state import SessionState
+from ..session_router import SessionState
 
 
 # ============================================================

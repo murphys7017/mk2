@@ -39,11 +39,10 @@ class TextInputAdapter(PassiveAdapter):
     def __init__(
         self,
         *,
-        name: str = "text_input",
         default_session_key: str = "dm:local",
         config: Optional[PassiveAdapterConfig] = None,
     ) -> None:
-        super().__init__(name=name, config=config, source_kind=SourceKind.EXTERNAL)
+        super().__init__(name="text_input", config=config, source_kind=SourceKind.EXTERNAL)
         self.default_session_key = default_session_key
 
         # 中文：一个简单递增计数，用作 raw_event_id
