@@ -2,7 +2,7 @@
 
 面向对象：准备长期维护、排障、扩展本仓库的工程同学。
 
-基线时间：2026-02-12（与当前代码快照对齐）。
+基线时间：2026-02-21（与当前代码快照对齐）。
 
 ---
 
@@ -10,7 +10,7 @@
 
 这个仓库实现的是一个事件驱动的多会话 Agent runtime，核心思想是：
 
-`Adapter -> Observation -> Bus -> Router -> Session Worker -> Gate -> Agent -> emit 回流 Bus`
+`Adapter -> Observation -> Bus -> Router -> Session Worker -> Gate -> Agent -> emit 回流 Bus -> Session Worker -> EgressQueue -> OutputAdapter`
 
 其中：
 - Gate 负责“快而硬”的门控（DROP/SINK/DELIVER + 预算 hint）。
@@ -56,11 +56,12 @@
 每条 obs 的处理顺序：
 1. `await inbox.get()`（第一处 await 阻塞点）。
 2. `state.record(obs)` 更新 `SessionState`。
-3. `gate_config_provider.reload_if_changed()`。
-4. `gate.handle(obs, gate_ctx)` 得到 `GateOutcome`。
-5. 先执行 `outcome.emit -> bus`，再 `outcome.ingest -> gate pools`。
-6. 若 action 为 `DROP/SINK`，本条消息到此结束。
-7. 若 action 为 `DELIVER`，`await _handle_observation(...)` 进入业务处理（可能触发 Agent）。
+3. `_enqueue_egress(obs)`（命中输出策略时，放入 egress 队列，非阻塞）。
+4. `gate_config_provider.reload_if_changed()`。
+5. `gate.handle(obs, gate_ctx)` 得到 `GateOutcome`。
+6. 先执行 `outcome.emit -> bus`，再 `outcome.ingest -> gate pools`。
+7. 若 action 为 `DROP/SINK`，本条消息到此结束。
+8. 若 action 为 `DELIVER`，`await _handle_observation(...)` 进入业务处理（可能触发 Agent）。
 
 ### 2.5 Gate（门控与预算）
 
@@ -83,24 +84,33 @@ pipeline 固定顺序：
 - `GateDecision`：`action/scene/score/reasons/hint`。
 - `GateOutcome`：`decision + emit + ingest`。
 
-### 2.6 Core handler / AgentOrchestrator
+### 2.6 Core handler / AgentQueen
 
-文件：`src/core.py`、`src/agent/orchestrator.py`
+文件：`src/core.py`、`src/agent/queen.py`
 
 `_handle_user_observation()` 关键逻辑：
 - 先做防回流：`source_name.startswith("agent:")` 或 `actor_id == "agent"` 直接跳过，防止 agent 自激活循环。
 - 仅当 `decision.action == DELIVER` 且 `obs_type == MESSAGE` 才构建 `AgentRequest`。
-- `await self.agent_orchestrator.handle(req)`（第二处关键 await，可能慢）。
+- `await self.agent_queen.handle(req)`（第二处关键 await，可能慢）。
 - 将 `agent_outcome.emit` 回灌 bus。
 
-Agent 编排顺序：
-- `Planner -> EvidenceRunner -> Answerer -> Speaker -> PostProcessor`。
+Agent 编排顺序（当前实现）：
+- `Planner -> ContextBuilder -> PoolRouter -> Aggregator -> Speaker`。
 - 任一步异常会返回 fallback `AgentOutcome`，避免整链路沉默。
 
 ### 2.7 回流路径
 
 - Agent 的回复是新的 `Observation(MESSAGE)`，`source_name="agent:speaker"`，重新进入 Bus/Router/Worker。
 - 由于 Core 的回流防护，agent 消息不会再次触发 agent。
+
+### 2.8 Egress（出站输出）
+
+对应目录：`src/adapters/output/*`，核心调度在 `src/core.py`。
+
+- `should_egress(obs)` 决定哪些 observation 需要对外输出。
+- Worker 通过 `_enqueue_egress(obs)` 入队，不阻塞主链路。
+- `_egress_loop()` 后台串行消费并调用 `EgressHub.dispatch(obs)`。
+- `EgressHub` 支持按 `session_key` 路由到不同 output adapter。
 
 ---
 
@@ -124,7 +134,7 @@ Agent 编排顺序：
 
 ### 3.2 SessionState（运行态，不是长期记忆）
 
-文件：`src/session_state.py`
+文件：`src/session_router.py`（类：`SessionState`）
 
 包含：
 - `processed_total/error_total`
@@ -157,15 +167,16 @@ Agent 编排顺序：
 ## 4.1 `src/core.py`
 
 职责：
-- 组装 bus/router/gate/config_provider/system_reflex/agent_orchestrator。
+- 组装 bus/router/gate/config_provider/system_reflex/agent_queen/egress。
 - 管理 adapter 生命周期。
-- 管理 session worker/watcher/gc 三类后台任务。
+- 管理 session worker/watcher/gc/egress 四类后台任务。
 - 管理系统会话（pain/tick/control）。
 
 关键函数：
 - `_startup()` / `_shutdown()`
 - `_watch_new_sessions()`
 - `_session_loop()`
+- `_enqueue_egress()` / `_egress_loop()`
 - `_handle_system_observation()` / `_handle_user_observation()`
 - `_session_gc_loop()` / `_sweep_idle_sessions()` / `_gc_session()`
 
@@ -192,7 +203,7 @@ Agent 编排顺序：
 - `resolve_session_key()` 在 `session_key` 缺失时根据类型和 actor 补全。
 - `remove_session()` 是 GC 成功后的必要动作，否则 watcher 会继续认为 session 活跃。
 
-## 4.4 `src/session_state.py`
+## 4.4 `src/session_router.py::SessionState`
 
 职责：
 - 提供可测试、可观测的会话最小运行态。
@@ -228,6 +239,7 @@ Agent 编排顺序：
 
 `pipeline/policy.py` 重点：
 - 用户 MESSAGE + actor_type=`user` 时有 safety valve，避免被沉默 SINK（除硬 DROP）。
+- 标准路径对 MESSAGE 默认 DELIVER（直通），非 MESSAGE 仍走阈值策略。
 - override 优先级清晰，且 deliver override 不作用于 agent 生成消息。
 - 输出 `GateHint` 给 Agent 预算约束。
 
@@ -253,24 +265,13 @@ Agent 编排顺序：
 
 ## 4.9 `src/agent/*`
 
-`orchestrator.py`：
-- 统一编排 5 步，完整 trace，任一步错误可 fallback。
+`queen.py`：
+- 当前 agent 编排入口（`AgentQueen.handle`）。
+- 默认链路：`Planner -> ContextBuilder -> PoolRouter -> Aggregator -> Speaker`。
+- 默认 Speaker 产出 `source_name="agent:speaker"`、`actor_id="agent"` 的 MESSAGE observation。
 
-`planner.py`：
-- `RulePlanner.plan()` 根据 `gate_hint.budget` 选择 sources/tool_calls，控制开销上限。
-
-`evidence.py`：
-- 默认是 `StubEvidenceRunner`，从 time/session recent_obs 生成基础证据。
-
-`answerer.py`：
-- `StubAnswerer` 离线。
-- `LLMAnswerer` 调 `LLMGateway`，网络 I/O 在 `asyncio.to_thread`。
-
-`speaker.py`：
-- 把草稿转成 agent Message Observation（source=`agent:speaker`）。
-
-`post.py`：
-- 默认 `NoopPostProcessor`，给后续审计/埋点扩展预留口。
+`types.py`：
+- 定义 `AgentRequest` / `AgentOutcome` 等编排契约。
 
 ## 4.10 `src/llm/*`
 
@@ -295,9 +296,9 @@ Agent 编排顺序：
 高频 await 点：
 - `Core.run_forever -> await _router_task`
 - `Core._session_loop -> await inbox.get()`
-- `Core._handle_user_observation -> await agent_orchestrator.handle(req)`
-- `Orchestrator.handle -> await planner/evidence/answerer/speaker/post`
-- `LLMAnswerer.answer -> await asyncio.to_thread(gateway.call, ...)`
+- `Core._handle_user_observation -> await agent_queen.handle(req)`
+- `Core._egress_loop -> await egress.dispatch(obs)`
+- `AgentQueen.handle -> await planner/build/run/postprocess`
 
 潜在阻塞风险：
 - provider HTTP 慢/超时会占用线程池 worker（不再阻塞 event loop，但会拖慢响应）。

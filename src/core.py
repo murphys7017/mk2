@@ -29,6 +29,7 @@ from .config_provider import GateConfigProvider
 from .system_reflex import SystemReflexController, ReflexConfig
 from .agent import AgentQueen
 from .agent.types import AgentRequest
+from .adapters.output import EgressHub
 
 if TYPE_CHECKING:
     from .memory.service import MemoryService
@@ -105,6 +106,9 @@ class Core:
         enable_memory: bool = True,
         memory_config_path: str = "config/memory.yaml",
         memory_service: Optional[MemoryService] = None,
+        egress: Optional[EgressHub] = None,
+        egress_timeout_seconds: float = 1.0,
+        egress_queue_maxsize: int = 256,
     ) -> None:
         """
         参数：
@@ -144,6 +148,13 @@ class Core:
         self.memory_service = memory_service
         if self.memory_service is None and enable_memory:
             self.memory_service = self._init_default_memory_service(memory_config_path)
+        self.egress = egress
+        self.egress_timeout_seconds = egress_timeout_seconds
+        if egress_queue_maxsize <= 0:
+            raise ValueError("egress_queue_maxsize must be > 0")
+        self.egress_queue_maxsize = egress_queue_maxsize
+        self._egress_queue: Optional[asyncio.Queue[Observation]] = None
+        self._egress_task: Optional[asyncio.Task] = None
 
         # Session GC 配置
         self.enable_session_gc = enable_session_gc
@@ -259,6 +270,15 @@ class Core:
             )
             logger.info("Session GC loop started")
 
+        # 5. 启动 egress loop（可选）
+        if self.egress is not None:
+            self._egress_queue = asyncio.Queue(maxsize=self.egress_queue_maxsize)
+            self._egress_task = asyncio.create_task(
+                self._egress_loop(),
+                name="egress_loop",
+            )
+            logger.info("Egress loop started")
+
         logger.info("Core startup complete")
 
     async def _shutdown(self) -> None:
@@ -289,6 +309,8 @@ class Core:
             tasks_to_cancel.append(self._watcher_task)
         if self._gc_task and not self._gc_task.done():
             tasks_to_cancel.append(self._gc_task)
+        if self._egress_task and not self._egress_task.done():
+            tasks_to_cancel.append(self._egress_task)
         tasks_to_cancel.extend(
             task for task in self._workers.values() if not task.done()
         )
@@ -499,7 +521,10 @@ class Core:
                 state.record(obs)
                 self.metrics.inc_processed(session_key)
                 self._worker_stats[session_key] += 1
-                
+
+                # 在 worker 侧做异步出站：先入 history，再入输出池，保证一致性
+                self._enqueue_egress(obs)
+
                 # Gate 处理（进入业务处理前）
                 self.gate_config_provider.reload_if_changed()
                 gate_ctx = GateContext(
@@ -593,6 +618,40 @@ class Core:
             # logger.error(f"Error in worker for session {session_key}: {e}")
             state.record_error()
             self.metrics.inc_error(session_key)
+
+    def _enqueue_egress(self, obs: Observation) -> None:
+        """Enqueue observation for async egress dispatch (non-blocking)."""
+        if self.egress is None or self._egress_queue is None:
+            return
+
+        try:
+            self._egress_queue.put_nowait(obs)
+        except asyncio.QueueFull:
+            logger.warning(f"[{obs.session_key}] Egress queue full, dropped observation")
+        except Exception as e:
+            logger.warning(f"[{obs.session_key}] Egress enqueue failed: {e}")
+
+    async def _egress_loop(self) -> None:
+        """Background loop that sends queued observations to output adapters."""
+        if self.egress is None or self._egress_queue is None:
+            return
+
+        try:
+            while not self._closing:
+                obs = await self._egress_queue.get()
+                try:
+                    await asyncio.wait_for(
+                        self.egress.dispatch(obs),
+                        timeout=self.egress_timeout_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"[{obs.session_key}] Egress dispatch timeout after {self.egress_timeout_seconds}s"
+                    )
+                except Exception as e:
+                    logger.warning(f"[{obs.session_key}] Egress dispatch failed: {e}")
+        except asyncio.CancelledError:
+            raise
 
     # -------------------------
     # 处理逻辑（v0：可观测输出）
@@ -822,6 +881,7 @@ class Core:
                     if memory_turn_id:
                         emit_obs.metadata["memory_turn_id"] = memory_turn_id
                         emit_obs.metadata["memory_direction"] = "outbound"
+                    # Speaker 产出先回灌 bus，后续由 worker 统一进入输出池
                     self.bus.publish_nowait(emit_obs)
                     logger.debug(f"[{session_key}] Agent emit: {emit_obs.source_name}")
                 

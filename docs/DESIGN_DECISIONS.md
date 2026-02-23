@@ -1,6 +1,6 @@
 ﻿# MK2 设计决策（ADR）
 
-**最后更新**: 2026-02-12  
+**最后更新**: 2026-02-21  
 **定位**: 记录当前仍有效、且已在代码中落地的架构决策。
 
 ---
@@ -191,13 +191,76 @@
 - 进程重启后不保证恢复历史状态。
 
 **实现锚点**:
-- `src/session_state.py`
+- `src/session_router.py`（`SessionState`）
 - `src/gate/pool/*`
 - `src/core.py`（metrics/state）
 
 **影响**:
 - 正向：实现简单、性能好。
 - 代价：无跨重启历史，生产审计需外部日志/监控补齐。
+
+---
+
+## ADR-010：Egress 采用“worker 入队 + 后台 loop”并行输出
+
+**状态**: Accepted  
+**原因**:
+- 直接在 worker 内 `await` 外部输出会引入阻塞，拖慢会话消费。
+- 输出失败应 fail-open，不能影响主处理链路。
+
+**决策**:
+- worker 在 `state.record(obs)` 后仅执行 `_enqueue_egress(obs)`（非阻塞）。
+- Core 启动独立 `_egress_loop` 后台 task 处理真实输出。
+- 输出超时/异常记录 warning，不中断 worker。
+
+**实现锚点**:
+- `src/core.py::_enqueue_egress`
+- `src/core.py::_egress_loop`
+- `src/core.py::_startup` / `src/core.py::_shutdown`（egress task 生命周期）
+
+**影响**:
+- 正向：输出与会话处理并行，吞吐与稳定性更好。
+- 代价：增加一个异步队列与后台任务，需要关注队列满时的丢弃策略。
+
+---
+
+## ADR-011：Output Adapter 支持按 `session_key` 路由
+
+**状态**: Accepted  
+**原因**:
+- 不同会话可能对应不同输出终端（CLI/WebSocket/IM）。
+- 需要在不改 Core 主链路的前提下灵活分流。
+
+**决策**:
+- `EgressHub` 支持 `session_adapters` 映射。
+- 命中 `session_key` 时优先使用会话专属 adapter，否则回落到默认 adapters。
+
+**实现锚点**:
+- `src/adapters/output/hub.py::EgressHub`
+
+**影响**:
+- 正向：输出通道可按会话隔离，扩展成本低。
+- 代价：路由配置复杂度上升，需避免同会话重复绑定导致重复输出。
+
+---
+
+## ADR-012：MESSAGE 标准路径默认 DELIVER（直通）
+
+**状态**: Accepted  
+**原因**:
+- 当前交互目标优先“有回应”，减少用户消息被策略沉默。
+- DROP 仍由 hard bypass / dedup / overrides 等高优规则兜底。
+
+**决策**:
+- 在 `PolicyMapper` 标准路径中，`obs_type == MESSAGE` 默认 `DELIVER`。
+- 非 MESSAGE 场景保留阈值策略（`deliver_threshold/sink_threshold/default_action`）。
+
+**实现锚点**:
+- `src/gate/pipeline/policy.py::PolicyMapper.apply`
+
+**影响**:
+- 正向：用户感知更稳定，回复率更高。
+- 代价：MESSAGE 场景下阈值策略作用减弱，需要通过上游 DROP 规则和系统保护控制成本。
 
 ---
 

@@ -5,7 +5,13 @@ from typing import Any, Dict, Optional, Protocol
 
 # 这些类型在你项目里已经存在：src/agent/types.py, src/schemas/observation.py
 from src.agent.types import AgentRequest, AgentOutcome
-from src.schemas.observation import Observation, ObservationType, Actor, MessagePayload
+from src.schemas.observation import (
+    Actor,
+    MessagePayload,
+    Observation,
+    ObservationType,
+    SourceKind,
+)
 
 @dataclass
 class Plan:
@@ -61,7 +67,11 @@ class DefaultAggregator:
 class DefaultSpeaker:
     def speak(self, req: AgentRequest, final_text: str, extra: Optional[Dict[str, Any]] = None) -> Observation:
         return Observation(
-            obs_id="out_obs_1",
+            obs_type=ObservationType.MESSAGE,
+            source_name="agent:speaker",
+            source_kind=SourceKind.INTERNAL,
+            session_key=req.obs.session_key,
+            actor=Actor(actor_id="agent", actor_type="system", display_name="Agent"),
             payload=MessagePayload(text=final_text),
             metadata=extra or {},
         )

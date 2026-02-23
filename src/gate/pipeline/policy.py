@@ -109,12 +109,17 @@ class PolicyMapper:
                         )
                     return
 
-                if wip.score >= policy.deliver_threshold:
+                # 直通策略：MESSAGE 标准路径默认放行为 DELIVER
+                if obs.obs_type == ObservationType.MESSAGE:
                     wip.action_hint = GateAction.DELIVER
-                elif wip.score >= policy.sink_threshold:
-                    wip.action_hint = GateAction.SINK
+                    wip.reasons.append("deliver_passthrough")
                 else:
-                    wip.action_hint = policy.default_action
+                    if wip.score >= policy.deliver_threshold:
+                        wip.action_hint = GateAction.DELIVER
+                    elif wip.score >= policy.sink_threshold:
+                        wip.action_hint = GateAction.SINK
+                    else:
+                        wip.action_hint = policy.default_action
 
                 wip.model_tier = policy.default_model_tier
                 wip.response_policy = policy.default_response_policy

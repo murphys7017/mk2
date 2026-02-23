@@ -34,9 +34,9 @@ budget_profiles:
 
 scene_policies:
   dialogue:
-    deliver_threshold: 0.75
-    sink_threshold: 0.20
-    default_action: "sink"
+    deliver_threshold: 0.0
+    sink_threshold: -1.0
+    default_action: "deliver"
     default_model_tier: "low"
     default_response_policy: "respond_now"
     dedup_window_sec: 20

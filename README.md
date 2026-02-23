@@ -126,9 +126,11 @@ Adapter
 → SessionWorker
 → Gate（脑干）
 → Agent（认知）
-→ 后处理（未来扩展）
-→ Observation 回流
-→ System Reflex（自主神经）
+→ Observation 回流（进入历史上下文）
+→ SessionWorker（record 后入 egress queue）
+→ Egress Loop
+→ Output Adapter（CLI / WebSocket / IM）
+→ System Reflex（自主神经，处理 system session）
 ```
 
 所有状态变化都通过 Observation 传播。

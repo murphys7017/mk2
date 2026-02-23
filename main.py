@@ -5,6 +5,7 @@ from loguru import logger
 from src.core import Core
 from src.adapters.text_input_adapter import TextInputAdapter
 from src.adapters.timer_tick_adapter import TimerTickAdapter
+from src.adapters.output import CliOutputAdapter, EgressHub
 
 
 async def main():
@@ -22,6 +23,7 @@ async def main():
         system_session_key="system",
         message_routing="user",
         enable_system_fanout=False,  # v0 暂不开启扇出（可改为 True 测试）
+        egress=EgressHub([CliOutputAdapter(target_session_key="dm:local")]),
         # idle_ttl_seconds = 3,  # session 空闲多久后被标记为 idle（仅影响 metrics 和状态，不会自动删除 session）
         # gc_sweep_interval_seconds = 1,  # session GC 扫描间隔（仅影响 metrics 和状态，不会自动删除 session）
         # enable_session_gc = True,  # 是否启用 session GC（仅影响 metrics 和状态，不会自动删除 session）
@@ -37,9 +39,12 @@ async def main():
         await asyncio.sleep(0.5)  # 等待 Core 启动
         actor_id = "demo_user"
         session_key = "dm:demo_user"
+        loop = asyncio.get_running_loop()
         while True:
-            text = input(">:")
-        
+            try:
+                text = await loop.run_in_executor(None, lambda: input(">:"))
+            except EOFError:
+                break
 
             # 投递几条用户消息
             text_adapter.ingest_text(text, actor_id=actor_id, session_key=session_key)
