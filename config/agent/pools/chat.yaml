@@ -1,0 +1,4 @@
+id: chat
+kind: chat
+enabled: true
+notes: "Phase 0 chat pool stub config."

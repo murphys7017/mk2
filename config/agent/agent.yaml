@@ -1,0 +1,35 @@
+version: "0.1-phase0"
+
+planner:
+  default: default
+  items:
+    default:
+      kind: hybrid
+      config_file: config/agent/planner/default.yaml
+    rule:
+      kind: rule
+    hybrid:
+      kind: hybrid
+    llm:
+      kind: llm
+
+pools:
+  default: chat
+  items:
+    chat:
+      kind: chat
+    code:
+      kind: code_stub
+    plan:
+      kind: plan_stub
+    creative:
+      kind: creative_stub
+
+subagents:
+  default: chat
+  items:
+    chat:
+      enabled: true
+
+prompts:
+  default: planner_default

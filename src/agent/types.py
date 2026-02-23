@@ -1,102 +1,135 @@
-"""
-Agent 类型定义
-"""
+"""Agent 类型定义（Phase 0）。"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional
 
-from ..schemas.observation import Observation
 from ..gate.types import GateDecision, GateHint
+from ..schemas.observation import Observation
 from ..session_router import SessionState
 
 
-# ============================================================
-# Orchestrator v2 MVP 类型定义
-# ============================================================
-
 @dataclass
 class AgentRequest:
-    """Agent 处理请求（MVP 版）"""
+    """Agent 处理请求（由 Core 构造并传入）。"""
+
     obs: Observation
     gate_decision: GateDecision
     session_state: SessionState
     now: datetime
     gate_hint: Optional[GateHint] = None
-    
-    def __post_init__(self):
+
+    def __post_init__(self) -> None:
         if self.gate_hint is None and self.gate_decision:
             self.gate_hint = self.gate_decision.hint
 
 
 @dataclass
+class TaskPlan:
+    """Queen 内部任务计划（替代旧的 Plan 命名冲突）。"""
+
+    task_type: str = "chat"
+    pool_id: str = "chat"
+    required_context: tuple[str, ...] = ("recent_obs",)
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ContextPack:
+    """上下文打包结果（Phase 0 仅包含 recent_obs）。"""
+
+    recent_obs: List[Observation] = field(default_factory=list)
+    slots_hit: Dict[str, bool] = field(default_factory=dict)
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PoolResult:
+    """Pool 原始产物容器。"""
+
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class AgentOutcome:
+    """Agent 处理结果（Core 契约类型）。"""
+
+    emit: List[Observation] = field(default_factory=list)
+    trace: Dict[str, Any] = field(default_factory=dict)
+    error: Optional[str] = None
+
+
+# ============================================================
+# 兼容旧字段（保留，不用于新 Queen 主流程）
+# ============================================================
+
+@dataclass
 class InfoPlan:
-    """信息需求计划"""
-    sources: List[str] = field(default_factory=list)  # ["time", "memory", "kb", ...]
-    budget: Dict[str, Any] = field(default_factory=dict)  # {"time_ms": 2000, ...}
-    tool_calls: Optional[List[str]] = None  # 新增：规划的工具调用
+    """旧信息需求计划（Legacy）。"""
+
+    sources: List[str] = field(default_factory=list)
+    budget: Dict[str, Any] = field(default_factory=dict)
+    tool_calls: Optional[List[str]] = None
 
 
 @dataclass
 class EvidenceItem:
-    """单条证据"""
-    source: str  # "time", "memory", "kb", etc.
+    """旧证据条目（Legacy）。"""
+
+    source: str
     content: str
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class EvidencePack:
-    """证据包"""
+    """旧证据包（Legacy）。"""
+
     items: List[EvidenceItem] = field(default_factory=list)
-    stats: Dict[str, Any] = field(default_factory=dict)  # {"total_items": 2, "sources": [...]}
+    stats: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class AnswerDraft:
-    """回答草稿"""
+    """旧回答草稿（Legacy）。"""
+
     text: str
-    meta: Dict[str, Any] = field(default_factory=dict)  # {"confidence": 0.8, "method": "llm", ...}
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class AnswerSpec:
-    """回答规格"""
+    """旧回答规格（Legacy）。"""
+
     model: Optional[str] = None
-    params: Dict[str, Any] = field(default_factory=dict)  # {"temperature": 0.7, "max_tokens": 256}
+    params: Dict[str, Any] = field(default_factory=dict)
 
-
-@dataclass
-class AgentOutcome:
-    """Agent 处理结果（MVP 版）"""
-    emit: List[Observation] = field(default_factory=list)  # 要发送的观察（通常是回复）
-    trace: Dict[str, Any] = field(default_factory=dict)  # 执行跟踪信息
-    error: Optional[str] = None  # 错误信息（如有）
-
-
-# ============================================================
-# 向后兼容类型（保留，支持旧 Planner/Agent 代码）
-# ============================================================
 
 @dataclass
 class Step:
-    """执行步骤"""
+    """[Deprecated] 旧执行步骤。"""
+
     type: Literal["SKILL", "AGENT", "TOOL"]
-    target: str  # skill/agent/tool 的名称
+    target: str
     params: dict = field(default_factory=dict)
 
 
 @dataclass
 class Plan:
-    """执行计划"""
+    """[Deprecated] 旧执行计划（Legacy Plan）。"""
+
     steps: List[Step] = field(default_factory=list)
     reason: str = ""
 
 
+LegacyPlan = Plan
+
+
 @dataclass
 class AgentResponse:
-    """Agent 响应（旧接口，保留兼容性）"""
-    emit: List[Observation] = field(default_factory=list)  # 要发送的观察
+    """[Deprecated] 旧 Agent 响应。"""
+
+    emit: List[Observation] = field(default_factory=list)
     success: bool = True
     error: Optional[str] = None

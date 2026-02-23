@@ -45,7 +45,7 @@ scene_policies:
   group:
     deliver_threshold: 0.60
     sink_threshold: 0.30
-    default_action: "sink"
+    default_action: "deliver"
     default_model_tier: "low"
     default_response_policy: "defer"
     dedup_window_sec: 30

@@ -1,0 +1,15 @@
+id: default
+kind: hybrid
+timeout_seconds: 8.0
+
+llm:
+  provider: bailian
+  model: qwen-max
+  config_path: config/llm.yaml
+  timeout_seconds: 6.0
+  params:
+    temperature: 0.0
+    max_tokens: 280
+  prompt_path: config/agent/prompts/planner_hybrid_prompt.txt
+
+notes: "Phase 1 hybrid planner config."

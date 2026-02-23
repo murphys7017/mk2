@@ -1,0 +1,135 @@
+"""Agent Phase 1: HybridPlanner 验证。"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from src.agent.planner.hybrid_planner import HybridPlanner
+from src.agent.planner.llm_planner import LLMPlanner
+from src.agent.queen import AgentQueen
+from src.agent.types import AgentRequest
+from src.gate.types import GateAction, GateDecision, Scene
+from src.schemas.observation import (
+    Actor,
+    MessagePayload,
+    Observation,
+    ObservationType,
+    SourceKind,
+)
+from src.session_router import SessionState
+
+
+class _FakeBadLLMProvider:
+    def call(self, messages, **params):  # type: ignore[no-untyped-def]
+        return "```json\n{not valid json}\n```"
+
+
+class _FakeGoodLLMProvider:
+    def call(self, messages, **params):  # type: ignore[no-untyped-def]
+        return (
+            "```json\n"
+            "{"
+            "\"task_type\":\"plan\","
+            "\"pool_id\":\"plan\","
+            "\"required_context\":[\"recent_obs\",\"gate_hint\",\"unknown_slot\"],"
+            "\"meta\":{"
+            "\"reason\":\"llm_detected_plan\","
+            "\"confidence\":1.25,"
+            "\"strategy\":\"draft_critique\","
+            "\"complexity\":\"multi_step\""
+            "}"
+            "}\n"
+            "```"
+        )
+
+
+def _make_request(text: str) -> AgentRequest:
+    session_key = "dm:hybrid-phase1"
+    obs = Observation(
+        obs_type=ObservationType.MESSAGE,
+        source_name="test:input",
+        source_kind=SourceKind.EXTERNAL,
+        session_key=session_key,
+        actor=Actor(actor_id="u1", actor_type="user"),
+        payload=MessagePayload(text=text),
+        metadata={},
+    )
+    state = SessionState(session_key=session_key)
+    state.record(obs)
+    decision = GateDecision(
+        action=GateAction.DELIVER,
+        scene=Scene.DIALOGUE,
+        session_key=session_key,
+    )
+    return AgentRequest(
+        obs=obs,
+        gate_decision=decision,
+        session_state=state,
+        now=datetime.now(timezone.utc),
+    )
+
+
+@pytest.mark.asyncio
+async def test_hybrid_planner_falls_back_on_invalid_json() -> None:
+    llm = LLMPlanner(
+        config={"llm": {"timeout_seconds": 1}},
+        llm_provider=_FakeBadLLMProvider(),  # type: ignore[arg-type]
+    )
+    planner = HybridPlanner(
+        config={"timeout_seconds": 2},
+        llm_planner=llm,
+    )
+
+    plan = await planner.plan(_make_request("pytest 失败了，Traceback 如下"))
+    assert plan.task_type == "code"  # 来自 rule fallback
+    assert plan.meta.get("planner_kind") == "hybrid_rule_fallback"
+    assert plan.meta.get("llm_called") is True
+    assert plan.meta.get("llm_parse_ok") is False
+    assert isinstance(plan.meta.get("fallback_reason"), str)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_planner_parses_llm_json_and_normalizes() -> None:
+    llm = LLMPlanner(
+        config={"llm": {"timeout_seconds": 1}},
+        llm_provider=_FakeGoodLLMProvider(),  # type: ignore[arg-type]
+    )
+    planner = HybridPlanner(
+        config={"timeout_seconds": 2},
+        llm_planner=llm,
+    )
+
+    plan = await planner.plan(_make_request("帮我设计一个微服务架构方案"))
+    assert plan.task_type == "plan"
+    assert plan.pool_id == "plan"
+    assert plan.meta.get("planner_kind") == "hybrid_llm"
+    assert plan.meta.get("llm_parse_ok") is True
+    assert plan.meta.get("llm_called") is True
+    assert plan.meta.get("confidence") == 1.0  # 裁剪到 [0,1]
+    assert "unknown_slot" not in plan.required_context
+    assert "recent_obs" in plan.required_context
+
+
+@pytest.mark.asyncio
+async def test_agent_queen_trace_contains_hybrid_planner_signals() -> None:
+    llm = LLMPlanner(
+        config={"llm": {"timeout_seconds": 1}},
+        llm_provider=_FakeBadLLMProvider(),  # type: ignore[arg-type]
+    )
+    hybrid = HybridPlanner(
+        config={"timeout_seconds": 2},
+        llm_planner=llm,
+    )
+    queen = AgentQueen(planner=hybrid)
+
+    outcome = await queen.handle(_make_request("pytest 报错了"))
+    planner_trace = outcome.trace.get("planner", {})
+
+    assert len(outcome.emit) >= 1
+    assert outcome.emit[0].obs_type == ObservationType.MESSAGE
+    assert isinstance(outcome.emit[0].metadata, dict)
+    assert "planner_kind" in planner_trace
+    assert "llm_called" in planner_trace
+    assert "llm_parse_ok" in planner_trace

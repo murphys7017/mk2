@@ -1,0 +1,134 @@
+"""Agent 配置注册表（Phase 0 骨架）。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import yaml
+
+
+class AgentConfigRegistry:
+    """读取并提供 Agent 配置访问接口。"""
+
+    def __init__(self, config_path: str = "config/agent/agent.yaml") -> None:
+        self.config_path = Path(config_path)
+        self._legacy_config_path = Path("configs/agent/agent.yaml")
+        self._cache: Optional[Dict[str, Any]] = None
+
+    def load(self, force_reload: bool = False) -> Dict[str, Any]:
+        """加载配置；本阶段支持缺省硬编码配置。"""
+        if self._cache is not None and not force_reload:
+            return self._cache
+
+        config = self._default_config()
+        config_file = self.config_path
+        if not config_file.exists() and self._legacy_config_path.exists():
+            # 兼容旧路径，避免迁移期间加载失败。
+            config_file = self._legacy_config_path
+
+        if config_file.exists():
+            try:
+                loaded = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+                if isinstance(loaded, dict):
+                    config = self._merge(config, loaded)
+            except Exception:
+                # Phase 0 fail-open：配置错误不阻断 Agent 启动
+                pass
+
+        self.validate(config)
+        self._cache = config
+        return config
+
+    def validate(self, config: Dict[str, Any]) -> None:
+        """校验配置结构（Phase 0 最小校验）。"""
+        if not isinstance(config, dict):
+            raise ValueError("agent config must be a dict")
+        if not isinstance(config.get("planner"), dict):
+            raise ValueError("agent planner config must be a dict")
+        if not isinstance(config.get("pools"), dict):
+            raise ValueError("agent pools config must be a dict")
+
+    def get_planner_config(self, planner_id: Optional[str] = None) -> Dict[str, Any]:
+        """获取 planner 配置。"""
+        cfg = self.load()
+        planner_cfg = dict(cfg.get("planner", {}))
+        default_id = planner_cfg.get("default", "rule")
+        plan_id = planner_id or default_id
+        items = planner_cfg.get("items", {})
+        if isinstance(items, dict) and isinstance(items.get(plan_id), dict):
+            merged = dict(items.get(plan_id, {}))
+            file_cfg = self._load_planner_file(plan_id, merged)
+            if isinstance(file_cfg, dict):
+                merged = self._merge(file_cfg, merged)
+            merged.setdefault("id", plan_id)
+            return merged
+        return {"id": plan_id, "kind": plan_id}
+
+    def get_pool_config(self, pool_id: Optional[str] = None) -> Dict[str, Any]:
+        """获取 pool 配置。"""
+        cfg = self.load()
+        pools_cfg = dict(cfg.get("pools", {}))
+        default_id = pools_cfg.get("default", "chat")
+        pid = pool_id or default_id
+        items = pools_cfg.get("items", {})
+        if isinstance(items, dict) and isinstance(items.get(pid), dict):
+            merged = dict(items.get(pid, {}))
+            merged.setdefault("id", pid)
+            return merged
+        return {"id": pid, "kind": pid}
+
+    @staticmethod
+    def _default_config() -> Dict[str, Any]:
+        return {
+            "version": "0.1-phase0",
+            "planner": {
+                "default": "default",
+                "items": {
+                    "default": {
+                        "kind": "hybrid",
+                        "config_file": "config/agent/planner/default.yaml",
+                    },
+                    "rule": {"kind": "rule"},
+                    "hybrid": {"kind": "hybrid"},
+                    "llm": {"kind": "llm"},
+                },
+            },
+            "pools": {
+                "default": "chat",
+                "items": {
+                    "chat": {"kind": "chat"},
+                    "code": {"kind": "code_stub"},
+                    "plan": {"kind": "plan_stub"},
+                    "creative": {"kind": "creative_stub"},
+                },
+            },
+        }
+
+    @staticmethod
+    def _merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(base)
+        for key, value in override.items():
+            if isinstance(value, dict) and isinstance(out.get(key), dict):
+                out[key] = AgentConfigRegistry._merge(dict(out[key]), value)
+            else:
+                out[key] = value
+        return out
+
+    def _load_planner_file(self, plan_id: str, item_cfg: Dict[str, Any]) -> Dict[str, Any]:
+        config_file = item_cfg.get("config_file")
+        candidates: list[Path] = []
+        if isinstance(config_file, str) and config_file.strip():
+            candidates.append(Path(config_file.strip()))
+        candidates.append(Path(f"config/agent/planner/{plan_id}.yaml"))
+
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+            try:
+                loaded = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+                if isinstance(loaded, dict):
+                    return loaded
+            except Exception:
+                continue
+        return {}
