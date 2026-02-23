@@ -1,157 +1,242 @@
-# MK2
+# AG99 Qingniao
+> Ignite your own history
 
-A long-running, multi-session, event-driven agent system with built-in protection and self-regulation.
+A long-running, event-driven, multi-session Agent runtime.  
+The goal is not "the smartest single response", but a **stable, controllable, evolvable** runtime system.
 
-## Project Philosophy
+> Historical name: `mk2` (you may still see it in older docs/comments)
 
-MK2 is not a thin chat wrapper around an LLM. It is designed as a structural system where stability comes first:
+---
 
-1. Long-running reliability over short-term demo behavior
-2. Explicit boundaries over implicit coupling
-3. Observability, degradation, and recovery over “looks smart”
+## Why AG99 (Qingniao)
 
-The architecture follows a life-like layered model:
+AG99 is the technical codename, and **Qingniao** is the Chinese project name.  
+It is not just an Agent demo. It is a runtime that can evolve continuously: input bus, session isolation, pre-agent gate, controlled tuning, persistence, and async egress.
 
-1. Perception (Adapter / Observation)
-2. Reflex (Gate)
-3. Cognition (Agent)
-4. Autonomic regulation (System Reflex)
-5. Memory (Persistence + knowledge/config)
+If you want this to become a real long-term work instead of a script that "just runs", this name fits.
 
-## Architecture Overview
+---
 
-### 1. Brainstem Layer: Gate (Reflex and Protection)
+## Project Positioning
 
-Responsibilities:
+AG99 is an **event-driven Agent runtime**, focused on:
 
-1. Scene inference
-2. Scoring and budget mapping
-3. DROP / SINK / DELIVER decision
-4. Overload protection and runtime overrides
+- **Multi-session isolation**: one serial worker per `session_key`; serial within a session, concurrent across sessions
+- **Pre-agent Gate decisions**: fast rule-based routing before Agent (`DROP / SINK / DELIVER`)
+- **Agent orchestration**: `AgentQueen` coordinates planner / context / pool / aggregator / speaker
+- **System self-regulation**: System Reflex handles pain signals and tuning suggestions with controls (whitelist, TTL, cooldown)
+- **Memory persistence (fail-open)**: event/turn write failures do not block the main path
+- **Async egress**: outputs go through a background queue so worker loops are not blocked
 
-Properties:
+---
 
-1. Rule-based
-2. No LLM in the decision core
-3. Fast and predictable
-4. YAML-driven and hot-reloadable
-
-### 2. Cognitive Layer: Agent (Planning and Answering)
-
-Responsibilities:
-
-1. Planner builds information needs
-2. EvidenceRunner gathers evidence
-3. Answerer generates response
-4. Speaker/PostProcessor renders outputs
-
-Boundary:
-
-1. Agent handles only Gate-delivered requests
-2. Agent does not directly modify Gate policy
-
-### 3. Autonomic Layer: System Reflex (Self-regulation)
-
-Responsibilities:
-
-1. Aggregate pain/anomaly signals (Nociception)
-2. Trigger temporary tuning (for example emergency mode)
-3. Broadcast system state changes via CONTROL observations
-
-### 4. Memory Layer: Persistence and Knowledge
-
-Integrated into Core runtime flow:
-
-1. Event persistence (Observation level)
-2. Turn persistence (Agent call level)
-3. Markdown Vault for config/knowledge docs
-4. Failure queue with retry/spill/rotation/dead-letter
-
-Design rule: `fail-open` — memory failures must not block the main response path.
-
-## Runtime Flow
+## Main Runtime Path (Implemented)
 
 ```text
 Adapter
--> Observation
--> InputBus
--> SessionRouter
--> SessionWorker
--> Gate
--> Agent
--> emit Observation
--> back to Bus
--> System Reflex / Memory persistence
+  -> Observation
+  -> InputBus
+  -> SessionRouter
+  -> SessionWorker
+  -> Gate
+  -> AgentQueen
+  -> emit back to Bus
+  -> Egress
 ```
 
-## Safety and Boundaries
+### Core Semantics (Current Implementation)
+- Unified cross-module event contract: `Observation`
+- Gate output contract: `GateDecision` / `GateOutcome(decision + emit + ingest)`
+- Agent main handling is triggered only by `DELIVER + MESSAGE`
+- Agent outputs flow back into Bus with loop guards to prevent self-trigger loops
+- Memory and Egress are designed as **fail-open** (errors should not collapse the main loop)
 
-Hard constraints:
+---
 
-1. Gate does not call Agent
-2. Agent does not directly mutate Gate config
-3. Runtime tuning is applied through System Reflex
-4. State changes propagate via observations, not hidden side channels
+## Design Principles
 
-## Current Status
+### 1) Clear Boundaries
+- Gate does not call Agent directly
+- Agent does not mutate Gate config directly
+- Runtime tuning is unified through `SystemReflex + GateConfigProvider.update_overrides()`
+- Cross-module state changes should flow via `Observation` (avoid hidden side channels)
 
-Current mainline already has:
+### 2) Simple and Controllable Concurrency
+- **Serial within one session, concurrent across sessions**
+- `SessionState` is updated serially only by its owning session worker
 
-1. Multi-session isolation and concurrency
-2. Gate policy pipeline with hot reload
-3. Agent MVP orchestration
-4. System Reflex feedback loop
-5. Memory persistence in Core runtime
-6. Layered testing strategy (`offline` / `integration`)
+### 3) Stability Before "More Intelligence"
+- Gate stays fast, synchronous, and deterministic (no LLM calls inside Gate)
+- Synchronous LLM provider calls are wrapped from async paths via threads to avoid blocking the event loop
+
+---
+
+## Core Module Map
+
+```text
+src/
+├─ core.py                 # runtime orchestration and worker lifecycle
+├─ input_bus.py            # async input bus
+├─ session_router.py       # session_key routing, inboxes, and session state
+├─ gate/                   # pre-agent decision pipeline (scene/feature/scoring/policy/...)
+├─ agent/                  # AgentQueen and planner/context/pool/aggregator/speaker
+├─ system_reflex/          # self-regulation controller (whitelist, TTL, cooldown, rollback)
+├─ memory/                 # Event/Turn persistence, vault, failure queue
+├─ adapters/               # input/output adapters
+└─ schemas/                # cross-layer contracts such as Observation
+```
+
+---
 
 ## Quick Start
 
+### Requirements
+- Python 3.11+
+- `uv` is recommended
+
+### Install
 ```bash
-# Install dependencies
 uv sync
+```
 
-# Offline baseline tests (recommended)
-uv run pytest -m "not integration" -q
-
-# Start
+### Run
+```bash
 uv run python main.py
 ```
 
-## Test Commands
+### Offline Regression (recommended first)
+```bash
+uv run pytest -m "not integration" -q
+```
+
+If `uv run pytest` has local compatibility issues, fallback to:
 
 ```bash
-# Full suite (includes integration)
-uv run pytest -q
+pytest -m "not integration" -q
+```
 
-# Offline only
-uv run pytest -m "not integration" -q
-
-# Integration only (real external dependencies)
+### Integration Tests (real external dependencies)
+```bash
 uv run pytest -m integration -q
 ```
 
-Notes:
+> Integration tests depend on real providers / APIs / local services; some live tests are gated by env vars (for example `RUN_LLM_LIVE_TESTS=1`).
 
-1. LLM provider live tests are gated by `RUN_LLM_LIVE_TESTS=1` (see `tests/test_llm_providers.py`)
-2. Use `uv run pytest -q -rs` to inspect skip reasons
+---
 
-## Key Config Files
+## Configuration Notes
 
-1. `config/gate.yaml`
-2. `config/llm.yaml`
-3. `config/memory.yaml`
+### `config/gate.yaml`
+Defines Gate strategy and runtime behavior, including:
+- `scene_policies`
+- `rules`
+- `drop_escalation`
+- `overrides`
+- `budget_thresholds`
+- `budget_profiles`
 
-Use environment variables for secrets. Avoid committing plaintext keys.
+Hot reload is supported through config provider snapshot replacement.
 
-## Documentation Entry Points
+### `config/llm.yaml`
+- Use environment variables for secrets (avoid plaintext keys in repo)
+- Configure provider/model and runtime params
 
-1. `docs/README.md` (documentation index)
-2. `docs/DEPLOYMENT.md` (deployment and runtime guide)
-3. `docs/TESTING.md` (testing strategy)
-4. `docs/MEMORY.md` (current memory implementation)
-5. `docs/PROJECT_MODULE_DEEP_DIVE.md` (deep technical walkthrough)
-6. `docs/DESIGN_DECISIONS.md` (key architecture decisions)
+### `config/memory.yaml`
+- Controls relational backend, vault, failure queue, etc.
+- Memory init failures are fail-open by default
 
-## Historical Documents
+### `config/agent/`
+- Agent top-level config and planner sub-config
+- Default planning path supports rule / llm / hybrid
 
-Historical/phase-specific docs are archived under `docs/archive/` and are not the source of truth for current behavior.
+---
+
+## Runtime Behavior Highlights (for Troubleshooting)
+
+- One serial worker per session
+- Sessions run concurrently
+- Worker loop records state first, then Gate, then decides whether to call Agent
+- Outputs are sent via independent egress queue + loop to avoid external I/O blocking core workers
+- Agent feedback messages include loop guards to prevent self-activation
+
+---
+
+## Documentation Map
+
+### Active
+- `docs/README.md`: documentation index (Active / Reference / Experimental / Archive)
+- `docs/DEPLOYMENT.md`: deployment and runtime
+- `docs/TESTING.md`: test layers and commands
+- `docs/MEMORY.md`: current memory implementation
+- `docs/PROJECT_MODULE_DEEP_DIVE.md`: maintenance/troubleshooting deep dive
+- `docs/DESIGN_DECISIONS.md`: active ADR decisions
+- `docs/GATE_COMPLETE_SPECIFICATION.md`: Gate specification
+- `docs/SYSTEM_REFLEX_SPECIFICATION.md`: System Reflex specification
+- `docs/ROADMAP.md`: phase plan and priorities
+
+### Reference
+- `docs/AGENT_REQUEST_STRUCTURE.md`
+- `docs/AGENT_REQUEST_QUICK_REFERENCE.md`
+
+### Experimental
+- `tools/demo_e2e.py`
+- `docs/demo_e2e.md`
+
+> Experimental paths are not part of the stable runtime baseline. For deployment and validation, prioritize `main.py` + Active docs.
+
+---
+
+## Known Boundaries (Pragmatic Notes)
+
+- Default pool availability is effectively `chat`; `code / plan / creative` fallback to `chat` unless custom pools are injected
+- Single-session execution is serial by design, so slow requests block following requests in the same session
+- `core.py` currently carries substantial orchestration logic and will be further split/refined
+
+---
+
+## Roadmap Direction
+
+### P1: Agent Execution Capability
+- Ship executable `code / plan / creative` pools (instead of chat-only fallback)
+- Connect real tool invocation and result ingestion
+- Improve pool-level metrics and error taxonomy
+
+### P2: Observability
+- Introduce cross-layer `trace_id`
+- Add segmented latency metrics for Gate / Agent / Memory
+- Standardize structured log fields
+
+### P3: Structural Governance
+- Split `core.py`
+- Converge experimental scripts and mainline interfaces to reduce dual-track drift
+
+---
+
+## Development Workflow Suggestion
+
+For each iteration:
+
+1. Ensure offline regression passes first  
+   `pytest -m "not integration" -q`
+2. Run targeted tests for your changed area
+3. Run integration tests last (if external dependencies are available)
+4. Update corresponding Active docs whenever behavior changes
+
+---
+
+## License
+
+MIT License.
+
+See [LICENSE](./LICENSE) for details.
+
+---
+
+## Naming Inspiration
+
+Project codename: **AG99**  
+Chinese name: **Qingniao**
+
+The name inspiration comes from **SCP-CN-1559 "Qingniao"**.
+
+The long-term goal is not just to answer questions, but to build an Agent runtime that can run long-term, evolve continuously, and form stable internal order over time.

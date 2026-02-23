@@ -1,15 +1,15 @@
 ﻿# MK2 路线图（当前版）
 
-最后更新：2026-02-20
+最后更新：2026-02-23
 
 ## 1. 当前状态
 
-项目已具备稳定主链路：
+主链路已稳定运行：
 
-1. `Adapter -> Bus -> Router -> Worker -> Gate -> Agent -> emit -> Bus`
-2. System Reflex + Nociception 闭环可运行
-3. Memory 已接入 Core 主流程（event/turn 持久化，fail-open）
-4. 测试分层完整（offline / integration）
+1. `Adapter -> Bus -> Router -> Worker -> Gate -> AgentQueen -> emit -> Bus -> Egress`
+2. System Reflex + Nociception 可闭环运行
+3. Memory 已接入 Core 主流程（event/turn，fail-open）
+4. 测试分层可用（offline / integration）
 
 ## 2. 已完成里程碑
 
@@ -17,56 +17,56 @@
 
 1. InputBus / SessionRouter / SessionState / Core worker
 2. 多 session 隔离与串行语义
-3. 会话 GC
+3. session GC 与生命周期管理
 
 ### B. Gate 与系统反射
 
 1. Gate pipeline（scene/feature/scoring/dedup/policy/finalize）
-2. Drop/Sink/Deliver 分流
-3. Gate 配置热更新
-4. Nociception + System Reflex 保护回路
+2. `DROP/SINK/DELIVER` 动作语义
+3. Gate 配置热更新与运行时 override
+4. System Reflex 建议调节（白名单 + cooldown + TTL）
 
-### C. Agent MVP
+### C. Agent Phase0/1
 
-1. Planner / EvidenceRunner / Answerer / Speaker / PostProcessor 编排
-2. fallback 机制
-3. 防 Agent 回流自触发
+1. AgentQueen 编排主链路
+2. Rule/LLM/Hybrid planner
+3. ContextBuilder + PoolRouter + Aggregator + Speaker
+4. 失败 fallback 与回流防循环
 
 ### D. Memory 接入
 
-1. Core 默认自动初始化 Memory（可关闭）
-2. 入站 event 持久化
-3. DELIVER 场景 turn 生命周期持久化
-4. 失败队列上限、落盘、轮转、dead-letter
-5. 关键路径测试覆盖补齐
+1. Core 自动初始化（可关闭）
+2. Event 持久化
+3. Turn 生命周期持久化
+4. 失败队列落盘、轮转、dead-letter
 
 ### E. 文档治理
 
-1. 文档主入口重组（`docs/README.md`）
-2. 旧版 Memory 文档归档至 `docs/archive/memory/`
-3. 新增统一测试文档（`docs/TESTING.md`）
+1. Active/Archive 文档分层
+2. ADR 与模块深潜文档对齐代码
+3. 部署/测试文档保持可执行命令
 
-## 3. 下一阶段
+## 3. 下一阶段（优先级）
 
-### F. Agent 能力增强（高优先级）
+### P1：Agent 执行能力补齐
 
-1. Evidence 真源接入（替换更多 stub）
-2. Planner 策略配置化升级
-3. Answerer provider 级重试/超时/降级策略
+1. 落地 `code/plan/creative` 可执行 pool（不再只回退 chat）
+2. 对接真实工具调用与结果回灌
+3. 补强 pool 级指标与错误分类
 
-### G. 可观测性增强（中优先级）
+### P2：可观测性增强
 
-1. 分阶段延迟指标（Gate/Agent/Memory）
-2. 统一 trace_id 贯穿主链路
-3. 关键保护动作结构化日志
+1. 引入跨层 trace_id
+2. 增加 Gate/Agent/Memory 分段延迟指标
+3. 统一结构化日志字段
 
-### H. 结构治理（中优先级）
+### P3：结构治理
 
-1. 拆分 `core.py`（worker orchestration / system handler）
-2. 收敛模块边界，降低单文件复杂度
+1. 拆分 `core.py`（worker orchestration / system handler / memory hooks）
+2. 收敛实验脚本与主干接口，减少双轨实现
 
 ## 4. 执行建议
 
-1. 每次迭代优先保证 `pytest -m "not integration"` 稳定。
-2. integration 测试独立流水线执行并长期保活。
-3. 文档以 Active 单文档策略维护，避免同主题并行漂移。
+1. 每次迭代先保证 `pytest -m "not integration" -q` 通过。
+2. integration 测试独立 Job 执行。
+3. 文档按 Active 单文档策略维护，避免同主题多版本漂移。
