@@ -33,7 +33,7 @@ async def test_core_metrics_and_states():
     )
 
     # 添加 adapter
-    text_adapter = TextInputAdapter(name="text_input", default_session_key="dm:local")
+    text_adapter = TextInputAdapter(default_session_key="dm:local")
     core.add_adapter(text_adapter)
 
     async def stub_handle(req):
@@ -106,7 +106,7 @@ async def test_debug_payload_recording():
         message_routing="user",
     )
 
-    text_adapter = TextInputAdapter(name="text_input", default_session_key="dm:local")
+    text_adapter = TextInputAdapter(default_session_key="dm:local")
     core.add_adapter(text_adapter)
 
     run_task = asyncio.create_task(core.run_forever())

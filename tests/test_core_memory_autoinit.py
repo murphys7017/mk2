@@ -41,7 +41,7 @@ def test_core_memory_autoinit_success(tmp_path):
         enable_memory=True,
         memory_config_path=str(cfg_path),
         enable_session_gc=False,
-        agent_orchestrator=DummyOrchestrator(),
+        agent_queen=DummyOrchestrator(),
     )
     try:
         assert core.memory_service is not None
@@ -67,7 +67,7 @@ def test_core_memory_autoinit_fail_open(tmp_path):
         enable_memory=True,
         memory_config_path=str(cfg_path),
         enable_session_gc=False,
-        agent_orchestrator=DummyOrchestrator(),
+        agent_queen=DummyOrchestrator(),
     )
     try:
         assert core.memory_service is None

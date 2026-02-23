@@ -34,7 +34,7 @@ budget_profiles:
 
 scene_policies:
   dialogue:
-    deliver_threshold: 0.0
+    deliver_threshold: 0.50
     sink_threshold: -1.0
     default_action: "deliver"
     default_model_tier: "low"
@@ -43,7 +43,7 @@ scene_policies:
     max_reasons: 5
 
   group:
-    deliver_threshold: 0.85
+    deliver_threshold: 0.60
     sink_threshold: 0.30
     default_action: "sink"
     default_model_tier: "low"

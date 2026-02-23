@@ -15,7 +15,7 @@ async def main():
     - 支持 Ctrl+C 优雅退出
     """
     logger.info("Main starting")
-
+    session_key = "dm:demo_user"
     # 创建 Core
     core = Core(
         bus_maxsize=1000,
@@ -23,7 +23,7 @@ async def main():
         system_session_key="system",
         message_routing="user",
         enable_system_fanout=False,  # v0 暂不开启扇出（可改为 True 测试）
-        egress=EgressHub([CliOutputAdapter(target_session_key="dm:local")]),
+        egress=EgressHub([CliOutputAdapter(target_session_key=session_key)]),
         # idle_ttl_seconds = 3,  # session 空闲多久后被标记为 idle（仅影响 metrics 和状态，不会自动删除 session）
         # gc_sweep_interval_seconds = 1,  # session GC 扫描间隔（仅影响 metrics 和状态，不会自动删除 session）
         # enable_session_gc = True,  # 是否启用 session GC（仅影响 metrics 和状态，不会自动删除 session）
@@ -38,7 +38,7 @@ async def main():
         """演示：模拟一些输入"""
         await asyncio.sleep(0.5)  # 等待 Core 启动
         actor_id = "demo_user"
-        session_key = "dm:demo_user"
+        
         loop = asyncio.get_running_loop()
         while True:
             try:
