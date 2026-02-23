@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import pytest
 
-from src.llm import LLMConfig, LLMGateway
+from src.llm import LLMConfig, LLMProvider
 
 
 # 集成测试开关：只有设置 RUN_LLM_LIVE_TESTS=1 才执行
@@ -40,7 +40,7 @@ def test_bailian_api_call_live() -> None:
         model = next(iter(model_map.keys()))
 
     # Ensure provider exists; override key/base via default_params if needed
-    gateway = LLMGateway(
+    gateway = LLMProvider(
         provider=provider,
         model=model,
         config=cfg,
@@ -87,7 +87,7 @@ def test_ollama_api_call_live() -> None:
             raise AssertionError("No ollama models configured in config/llm.yaml")
         model = next(iter(model_map.keys()))
 
-    gateway = LLMGateway(
+    gateway = LLMProvider(
         provider=provider,
         model=model,
         config=cfg,

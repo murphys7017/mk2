@@ -10,7 +10,7 @@ from .config import LLMConfig
 from .registry import create_provider
 
 
-class LLMGateway:
+class LLMProvider:
     """统一对外接口：provider + model + params"""
 
     def __init__(
@@ -41,7 +41,7 @@ class LLMGateway:
         *,
         config_path: str = "config/llm.yaml",
         default_params: Dict[str, Any] | None = None,
-    ) -> "LLMGateway":
+    ) -> "LLMProvider":
         config = LLMConfig.load(config_path)
         return cls(provider, model, config=config, default_params=default_params)
 

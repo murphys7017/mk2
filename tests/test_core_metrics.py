@@ -39,7 +39,7 @@ async def test_core_metrics_and_states():
     async def stub_handle(req):
         return AgentOutcome(emit=[], trace={}, error=None)
 
-    core.agent_orchestrator.handle = stub_handle
+    core.agent_queen.handle = stub_handle
 
     # 启动 Core（后台）
     run_task = asyncio.create_task(core.run_forever())

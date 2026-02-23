@@ -138,7 +138,7 @@ async def test_core_accepts_injected_orchestrator():
         message_routing="user",
         enable_system_fanout=False,
         enable_session_gc=False,
-        agent_orchestrator=spy,
+        agent_queen=spy,
     )
 
     task = asyncio.create_task(core.run_forever())
@@ -172,7 +172,7 @@ async def test_core_persists_event_and_turn_with_memory_service():
         message_routing="user",
         enable_system_fanout=False,
         enable_session_gc=False,
-        agent_orchestrator=orchestrator,
+        agent_queen=orchestrator,
         memory_service=memory,
     )
 
@@ -213,7 +213,7 @@ async def test_core_drop_action_persists_event_only():
         enable_system_fanout=False,
         enable_session_gc=False,
         gate=DropGate(),
-        agent_orchestrator=spy,
+        agent_queen=spy,
         memory_service=memory,
     )
 
@@ -253,7 +253,7 @@ async def test_core_skip_turn_when_append_event_failed():
         message_routing="user",
         enable_system_fanout=False,
         enable_session_gc=False,
-        agent_orchestrator=orchestrator,
+        agent_queen=orchestrator,
         memory_service=memory,
     )
 

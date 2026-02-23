@@ -51,7 +51,7 @@ async def test_agent_emit_does_not_retrigger_agent():
         )
         return AgentOutcome(emit=[emit], trace={}, error=None)
 
-    core.agent_orchestrator.handle = stub_handle
+    core.agent_queen.handle = stub_handle
 
     task = asyncio.create_task(core.run_forever())
     await _wait_until(lambda: core._router_task is not None and core._watcher_task is not None)

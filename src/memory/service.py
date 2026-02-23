@@ -412,19 +412,19 @@ class MemoryService:
         if self.markdown_vault:
             self.markdown_vault.upsert_config(key, content, metadata)
         else:
-            # logger.warning("upsert_config() requires MarkdownVaultHybrid")
+            logger.warning("upsert_config() requires MarkdownVaultHybrid")
     
     # ===== 向量索引管理 =====
     
     def reindex_all_items(self) -> int:
         """重建所有项的向量索引"""
         if not self.vector_index or not self.embedding_provider:
-            # logger.warning("Vector index not available, skipping reindex")
+            logger.warning("Vector index not available, skipping reindex")
             return 0
         if self.markdown_store is None:
-            # logger.warning(
-            # "reindex_all_items() is not available until legacy store or future vectorization is enabled"
-            # )
+            logger.warning(
+                "reindex_all_items() is not available until legacy store or future vectorization is enabled"
+            )
             return 0
         
         self.vector_index.clear()
@@ -459,13 +459,13 @@ class MemoryService:
     
     def _background_flush(self) -> None:
         """后台线程：定期将缓冲区事件持久化到数据库"""
-        # logger.debug("Background flush thread started")
+        logger.debug("Background flush thread started")
         try:
             while not self._stop_flushing.wait(self._flush_interval):
                 self._flush_event_buffer()
                 self._retry_failed_events()
         finally:
-            # logger.debug("Background flush thread stopped")
+            logger.debug("Background flush thread stopped")
     
     def _flush_event_buffer(self) -> None:
         """将事件缓冲区内的所有事件持久化到数据库"""
@@ -482,7 +482,7 @@ class MemoryService:
             try:
                 self.db_backend.save_event_dict(event_dict)
             except Exception as e:
-                # logger.error(f"Failed to flush event {event_dict.get('event_id')}: {e}")
+                logger.error(f"Failed to flush event {event_dict.get('event_id')}: {e}")
                 self._enqueue_failed_event(
                     {
                         "event_dict": event_dict,
@@ -493,7 +493,7 @@ class MemoryService:
                 )
         
         if events_to_flush:
-            # logger.debug(f"Flushed {len(events_to_flush)} events to database")
+            logger.debug(f"Flushed {len(events_to_flush)} events to database")
 
     def _retry_failed_events(self) -> int:
         """重试失败事件持久化，返回本轮成功数量。"""
@@ -534,7 +534,7 @@ class MemoryService:
             # )
         
         if recovered:
-            # logger.info(f"Recovered {recovered} previously failed events")
+            logger.info(f"Recovered {recovered} previously failed events")
         return recovered
 
     def _load_failed_events_from_disk(self) -> None:
@@ -586,7 +586,7 @@ class MemoryService:
             # f"to {self._failed_events_file}",
             # )
         if loaded:
-            # logger.warning(f"Loaded {loaded} failed events from {self._failed_events_file}")
+            logger.warning(f"Loaded {loaded} failed events from {self._failed_events_file}")
 
     def _persist_failed_events_to_disk(self) -> None:
         """将失败事件落盘，避免进程退出后数据丢失。"""
@@ -595,9 +595,9 @@ class MemoryService:
         if not records:
             return
         self._append_records_to_file(records, self._failed_events_file)
-        # logger.warning(
-        # f"Persisted {len(records)} failed events to {self._failed_events_file}",
-        # )
+        logger.warning(
+            f"Persisted {len(records)} failed events to {self._failed_events_file}"
+        )
 
     def _enqueue_failed_event(self, record: dict[str, Any]) -> None:
         """将失败事件加入内存队列；超限则分批落盘。"""
@@ -614,10 +614,10 @@ class MemoryService:
                 del self._failed_events[:spill_count]
         if overflow_records:
             self._append_records_to_file(overflow_records, self._failed_events_file)
-            # logger.warning(
-            # f"Failed-event queue overflow: spilled {len(overflow_records)} records "
-            # f"to {self._failed_events_file}",
-            # )
+            logger.warning(
+                f"Failed-event queue overflow: spilled {len(overflow_records)} records "
+                f"to {self._failed_events_file}",
+            )
 
     def _append_records_to_file(self, records: list[dict], file_path: Path) -> None:
         """追加记录到指定 dump 文件，必要时执行轮转。"""
@@ -633,7 +633,7 @@ class MemoryService:
                     for line in lines:
                         f.write(line)
             except Exception as e:
-                # logger.error(f"Failed to append failed-event records to {file_path}: {e}")
+                logger.error(f"Failed to append failed-event records to {file_path}: {e}")
 
     def _rotate_dump_file_if_needed(self, file_path: Path, incoming_bytes: int) -> None:
         """当文件超出阈值时执行轮转。"""
@@ -655,7 +655,7 @@ class MemoryService:
             if file_path.exists():
                 file_path.replace(self._rotated_dump_path(file_path, 1))
         except Exception as e:
-            # logger.error(f"Failed to rotate dump file {file_path}: {e}")
+            logger.error(f"Failed to rotate dump file {file_path}: {e}")
 
     @staticmethod
     def _rotated_dump_path(base_file: Path, idx: int) -> Path:
@@ -757,12 +757,12 @@ class MemoryService:
             # 准确反馈状态
             if self._failed_events:
                 self._persist_failed_events_to_disk()
-                # logger.warning(
-                # f"{len(self._failed_events)} events failed to persist "
-                # f"(details dumped to {self._failed_events_file})"
-                # )
+                logger.warning(
+                    f"{len(self._failed_events)} events failed to persist "
+                    f"(details dumped to {self._failed_events_file})"
+                )
             else:
-                # logger.info("All buffered events flushed to database")
+                logger.info("All buffered events flushed to database")
         
         self.db_backend.close()
-        # logger.info("MemoryService closed")
+        logger.info("MemoryService closed")

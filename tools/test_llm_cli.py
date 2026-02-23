@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.llm import LLMConfig, LLMGateway
+from src.llm import LLMConfig, LLMProvider
 
 
 Message = Dict[str, str]
@@ -135,7 +135,7 @@ def main() -> int:
     if args.max_tokens is not None:
         default_params["max_tokens"] = args.max_tokens
 
-    gateway = LLMGateway(provider, model, config=cfg, default_params=default_params)
+    gateway = LLMProvider(provider, model, config=cfg, default_params=default_params)
 
     system_prompt = args.system.strip()
     messages: List[Message] = []
@@ -195,7 +195,7 @@ def main() -> int:
                 # pick a default model for this provider if current doesn't exist
                 if model not in cfg.models.get(provider, {}):
                     provider, model = _pick_default_provider_model(cfg)
-                gateway = LLMGateway(provider, model, config=cfg, default_params=default_params)
+                gateway = LLMProvider(provider, model, config=cfg, default_params=default_params)
                 print(f"switched provider -> {provider}, model -> {model}")
                 continue
 
@@ -209,7 +209,7 @@ def main() -> int:
                     print(f"available: {list(cfg.models.get(provider, {}).keys())}")
                     continue
                 model = new_model
-                gateway = LLMGateway(provider, model, config=cfg, default_params=default_params)
+                gateway = LLMProvider(provider, model, config=cfg, default_params=default_params)
                 print(f"switched model -> {model}")
                 continue
 
@@ -238,7 +238,7 @@ def main() -> int:
                     print(f"params error: {e}")
                     continue
                 default_params.update(kv)
-                gateway = LLMGateway(provider, model, config=cfg, default_params=default_params)
+                gateway = LLMProvider(provider, model, config=cfg, default_params=default_params)
                 print(f"default params updated -> {default_params}")
                 continue
 
