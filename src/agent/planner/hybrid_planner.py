@@ -9,6 +9,7 @@ from ..types import AgentRequest, TaskPlan
 from .llm_planner import LLMPlanner
 from .rule_planner import RulePlanner
 from .validator import normalize_task_plan_payload
+from .types import PlannerInputView
 
 
 class HybridPlanner:
@@ -41,13 +42,17 @@ class HybridPlanner:
             default={"multi_step", "open_ended"},
         )
 
-    async def plan(self, req: AgentRequest) -> TaskPlan:
-        rule_plan = await self._rule.plan(req)
+    async def plan(self, req: AgentRequest, view: PlannerInputView | None = None) -> TaskPlan:
+        rule_plan = await self._rule.plan(req, view=view)
         rule_guess = {
             "task_type": rule_plan.task_type,
             "pool_id": rule_plan.pool_id,
         }
-        recent_obs_count = len(req.session_state.recent_obs or [])
+        recent_obs_count = (
+            view.meta.get("recent_obs_count")
+            if view is not None and isinstance(view.meta, dict)
+            else len(req.session_state.recent_obs or [])
+        )
 
         small_plan: Optional[TaskPlan] = None
         small_error: Optional[str] = None
@@ -58,6 +63,7 @@ class HybridPlanner:
                         req,
                         rule_plan=rule_plan,
                         recent_obs_count=recent_obs_count,
+                        view=view,
                     ),
                     timeout=self._timeout_seconds,
                 )
@@ -71,13 +77,17 @@ class HybridPlanner:
                     small_plan,
                     meta_override={
                         "rule_guess": rule_guess,
-                        "llm_called": True,
-                        "llm_parse_ok": True,
+                        "planner_stage": "hybrid",
+                        "planner_llm_called": True,
+                        "planner_llm_parse_ok": True,
                         "small_llm_called": True,
                         "small_llm_parse_ok": True,
                         "big_llm_called": False,
+                        "big_llm_parse_ok": None,
                         "escalated_to_big": False,
+                        "small_gate_decision": "use_small",
                         "small_gate_reason": gate_reason,
+                        "final_plan_source": "small_llm",
                     },
                 )
                 return normalize_task_plan_payload(payload, planner_kind="hybrid_small_llm")
@@ -88,6 +98,7 @@ class HybridPlanner:
                         req,
                         rule_plan=small_plan,
                         recent_obs_count=recent_obs_count,
+                        view=view,
                     ),
                     timeout=self._timeout_seconds,
                 )
@@ -95,15 +106,17 @@ class HybridPlanner:
                     big_plan,
                     meta_override={
                         "rule_guess": rule_guess,
-                        "llm_called": True,
-                        "llm_parse_ok": True,
+                        "planner_stage": "hybrid",
+                        "planner_llm_called": True,
+                        "planner_llm_parse_ok": True,
                         "small_llm_called": True,
                         "small_llm_parse_ok": True,
                         "big_llm_called": True,
                         "big_llm_parse_ok": True,
                         "escalated_to_big": True,
+                        "small_gate_decision": "require_big",
                         "small_gate_reason": gate_reason,
-                        "small_need_big_model": True,
+                        "final_plan_source": "big_llm",
                     },
                 )
                 return normalize_task_plan_payload(payload, planner_kind="hybrid_big_llm")
@@ -112,17 +125,19 @@ class HybridPlanner:
                     small_plan,
                     meta_override={
                         "rule_guess": rule_guess,
-                        "llm_called": True,
-                        "llm_parse_ok": True,
+                        "planner_stage": "hybrid",
+                        "planner_llm_called": True,
+                        "planner_llm_parse_ok": True,
                         "small_llm_called": True,
                         "small_llm_parse_ok": True,
                         "big_llm_called": True,
                         "big_llm_parse_ok": False,
                         "escalated_to_big": True,
+                        "small_gate_decision": "require_big",
                         "small_gate_reason": gate_reason,
-                        "small_need_big_model": True,
                         "fallback_reason": str(exc),
                         "llm_error": str(exc),
+                        "final_plan_source": "small_llm",
                     },
                 )
                 return normalize_task_plan_payload(payload, planner_kind="hybrid_small_fallback")
@@ -133,6 +148,7 @@ class HybridPlanner:
                     req,
                     rule_plan=rule_plan,
                     recent_obs_count=recent_obs_count,
+                    view=view,
                 ),
                 timeout=self._timeout_seconds,
             )
@@ -140,13 +156,18 @@ class HybridPlanner:
                 llm_plan,
                 meta_override={
                     "rule_guess": rule_guess,
-                    "llm_called": True,
-                    "llm_parse_ok": True,
+                    "planner_stage": "hybrid",
+                    "planner_llm_called": True,
+                    "planner_llm_parse_ok": True,
                     "small_llm_called": self._small_llm is not None,
                     "small_llm_parse_ok": False if self._small_llm is not None else None,
                     "small_llm_error": small_error,
                     "big_llm_called": True,
-                    "escalated_to_big": self._small_llm is not None,
+                    "big_llm_parse_ok": True,
+                    "escalated_to_big": False,
+                    "small_gate_decision": "skipped" if self._small_llm is None else "error",
+                    "small_gate_reason": "small_llm_disabled" if self._small_llm is None else "small_llm_error",
+                    "final_plan_source": "big_llm",
                 },
             )
             return normalize_task_plan_payload(payload, planner_kind="hybrid_llm")
@@ -158,14 +179,17 @@ class HybridPlanner:
                 rule_plan,
                 meta_override={
                     "rule_guess": rule_guess,
-                    "llm_called": True,
-                    "llm_parse_ok": False,
+                    "planner_stage": "hybrid",
+                    "planner_llm_called": True,
+                    "planner_llm_parse_ok": False,
                     "small_llm_called": self._small_llm is not None,
                     "small_llm_parse_ok": False if self._small_llm is not None else None,
                     "small_llm_error": small_error,
                     "big_llm_called": True,
+                    "big_llm_parse_ok": False,
                     "fallback_reason": reason,
                     "llm_error": reason,
+                    "final_plan_source": "rule_fallback",
                 },
             )
             return normalize_task_plan_payload(payload, planner_kind="hybrid_rule_fallback")
@@ -248,8 +272,8 @@ def _to_payload(plan: TaskPlan, *, meta_override: Optional[Mapping[str, Any]] = 
         "meta": meta,
         # 兼容历史 trace 读取路径
         "rule_guess": meta.get("rule_guess"),
-        "llm_called": bool(meta.get("llm_called", True)),
-        "llm_parse_ok": bool(meta.get("llm_parse_ok", True)),
+        "planner_llm_called": bool(meta.get("planner_llm_called", True)),
+        "planner_llm_parse_ok": bool(meta.get("planner_llm_parse_ok", True)),
         "fallback_reason": meta.get("fallback_reason"),
         "llm_error": meta.get("llm_error"),
     }

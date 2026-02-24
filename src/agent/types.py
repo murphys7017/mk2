@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Literal, Optional
 from ..gate.types import GateDecision, GateHint
 from ..schemas.observation import Observation
 from ..session_router import SessionState
+from .context.types import ContextPack, ContextSlot
 
 
 @dataclass
@@ -32,15 +33,6 @@ class TaskPlan:
     task_type: str = "chat"
     pool_id: str = "chat"
     required_context: tuple[str, ...] = ("recent_obs",)
-    meta: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ContextPack:
-    """上下文打包结果（Phase 0 仅包含 recent_obs）。"""
-
-    recent_obs: List[Observation] = field(default_factory=list)
-    slots_hit: Dict[str, bool] = field(default_factory=dict)
     meta: Dict[str, Any] = field(default_factory=dict)
 
 

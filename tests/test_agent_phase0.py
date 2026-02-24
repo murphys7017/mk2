@@ -8,6 +8,7 @@ import pytest
 
 from src.agent.queen import AgentQueen
 from src.agent.planner.rule_planner import RulePlanner
+from src.agent.planner.types import PlannerInputView
 from src.agent.types import AgentOutcome, AgentRequest
 from src.gate.types import GateAction, GateDecision, Scene
 from src.schemas.observation import (
@@ -85,3 +86,19 @@ async def test_code_task_falls_back_to_chat_pool_when_pool_missing() -> None:
     assert outcome.trace.get("pool_id") == "chat"
     pool_trace = outcome.trace.get("pool", {})
     assert pool_trace.get("fallback") is True
+
+
+@pytest.mark.asyncio
+async def test_rule_planner_uses_view_text_override() -> None:
+    planner = RulePlanner()
+    req = _make_request("今天天气怎么样？")
+    view = PlannerInputView(
+        current_input_text="pytest 失败了，有 Traceback",
+        recent_obs_view=[],
+        session_state_view={},
+        gate_hint_view={},
+    )
+
+    plan = await planner.plan(req, view=view)
+
+    assert plan.task_type == "code"

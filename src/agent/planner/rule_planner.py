@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..types import AgentRequest, TaskPlan
 from .signals import extract_signals
+from .types import PlannerInputView
 from .validator import normalize_task_plan
 
 
@@ -12,8 +13,9 @@ class RulePlanner:
 
     kind = "rule"
 
-    async def plan(self, req: AgentRequest) -> TaskPlan:
-        signals = extract_signals(req)
+    async def plan(self, req: AgentRequest, view: PlannerInputView | None = None) -> TaskPlan:
+        override_text = view.current_input_text if view is not None else None
+        signals = extract_signals(req, text_override=override_text)
         reason = "dialogue_default"
         task_type = "chat"
         pool_id = "chat"

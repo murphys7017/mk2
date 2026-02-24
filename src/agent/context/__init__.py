@@ -1,8 +1,14 @@
-"""Context 模块导出。"""
+"""Context module exports."""
 
-from .builder import ContextBuilder, RecentObsContextBuilder
+from .builder import ContextBuilder, RecentObsContextBuilder, SlotContextBuilder
+from .types import ContextPack, ContextSlot, ProviderResult, SlotSpec
 
 __all__ = [
     "ContextBuilder",
     "RecentObsContextBuilder",
+    "SlotContextBuilder",
+    "ContextPack",
+    "ContextSlot",
+    "ProviderResult",
+    "SlotSpec",
 ]

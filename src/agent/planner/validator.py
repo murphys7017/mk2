@@ -10,6 +10,14 @@ ALLOWED_TASK_TYPES = {"chat", "code", "plan", "creative"}
 ALLOWED_STRATEGIES = {"single_pass", "draft_critique"}
 ALLOWED_COMPLEXITIES = {"simple", "multi_step", "open_ended"}
 ALLOWED_CONTEXT_SLOTS = {
+    "current_input",
+    "plan_meta",
+    "session_state",
+    "persona",
+    "memory",
+    "knowledge",
+    "runtime_policy",
+    "recent_summary",
     "recent_obs",
     "gate_hint",
     "memory_summary",
@@ -47,8 +55,17 @@ def normalize_task_plan_payload(payload: Mapping[str, Any], *, planner_kind: str
     # 将顶层透传字段并入 meta（便于调用方塞扩展 trace）
     passthrough = (
         "rule_guess",
-        "llm_called",
-        "llm_parse_ok",
+        "planner_stage",
+        "planner_llm_called",
+        "planner_llm_parse_ok",
+        "small_llm_called",
+        "small_llm_parse_ok",
+        "big_llm_called",
+        "big_llm_parse_ok",
+        "escalated_to_big",
+        "small_gate_decision",
+        "small_gate_reason",
+        "final_plan_source",
         "fallback_reason",
         "llm_error",
     )

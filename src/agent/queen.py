@@ -14,9 +14,11 @@ from ..schemas.observation import (
     ObservationType,
     SourceKind,
 )
-from .context import ContextBuilder, RecentObsContextBuilder
+from .context import ContextBuilder, RecentObsContextBuilder, SlotContextBuilder
+from .context.types import ContextSlot
 from .planner import HybridPlanner, LLMPlanner, Planner, RulePlanner
 from .planner.validator import normalize_task_plan
+from .planner.types import build_planner_input_view, PlannerInputView
 from .pools import AgentPoolRouter, Aggregator, ChatPool, DraftAggregator, Pool, PoolRouter
 from .registry import AgentConfigRegistry
 from .speaker import AgentSpeaker, Speaker
@@ -47,7 +49,7 @@ class AgentQueen:
         self.registry = registry or AgentConfigRegistry()
         self._config = self.registry.load()
         self.planner: Planner = planner or self._build_planner()
-        self.context_builder: ContextBuilder = context_builder or RecentObsContextBuilder()
+        self.context_builder: ContextBuilder = context_builder or SlotContextBuilder()
         self.pool_router: PoolRouter = pool_router or AgentPoolRouter()
         self.aggregator: Aggregator = aggregator or DraftAggregator()
         self.speaker: Speaker = speaker or AgentSpeaker()
@@ -66,8 +68,9 @@ class AgentQueen:
         """执行 Agent 主流程并返回可回灌 Observation。"""
         started = time.perf_counter()
         trace: Dict[str, Any] = {
-            "planner": {},
-            "context": {},
+            "planner_input_summary": {},
+            "planner_summary": {},
+            "context_build_summary": {},
             "pool": {},
             "aggregation": {},
             "speaker": {},
@@ -106,20 +109,41 @@ class AgentQueen:
         errors: list[str],
     ) -> TaskPlan:
         try:
-            plan = await self.planner.plan(req)
+            planner_input_view = build_planner_input_view(req)
+            trace["planner_input_summary"] = {
+                "current_input_len": len(planner_input_view.current_input_text or ""),
+                "recent_obs_count": planner_input_view.meta.get("recent_obs_count"),
+                "recent_obs_preview_count": len(planner_input_view.recent_obs_view or []),
+                "gate_hint_present": bool(planner_input_view.gate_hint_view),
+            }
+            plan = await self.planner.plan(req, view=planner_input_view)
             plan = normalize_task_plan(plan, planner_kind=getattr(self.planner, "kind", "unknown"))
-            trace["planner"] = {
+            planner_summary = {
                 "planner_kind": plan.meta.get("planner_kind"),
+                "planner_stage": plan.meta.get("planner_stage"),
+                "final_plan_source": plan.meta.get("final_plan_source"),
                 "task_type": plan.task_type,
                 "pool_id": plan.pool_id,
                 "rule_guess": plan.meta.get("rule_guess"),
-                "llm_called": plan.meta.get("llm_called"),
-                "llm_parse_ok": plan.meta.get("llm_parse_ok"),
+                "planner_llm_called": plan.meta.get("planner_llm_called"),
+                "planner_llm_parse_ok": plan.meta.get("planner_llm_parse_ok"),
+                "small_llm_called": plan.meta.get("small_llm_called"),
+                "big_llm_called": plan.meta.get("big_llm_called"),
+                "escalated_to_big": plan.meta.get("escalated_to_big"),
+                "small_gate_decision": plan.meta.get("small_gate_decision"),
+                "small_gate_reason": plan.meta.get("small_gate_reason"),
                 "fallback_reason": plan.meta.get("fallback_reason"),
                 "confidence": plan.meta.get("confidence"),
                 "reason": plan.meta.get("reason"),
             }
-            logger.debug(f"Agent planner output: {plan}")
+            trace["planner_summary"] = planner_summary
+            logger.debug(
+                "Agent planner summary: kind=%s source=%s task=%s pool=%s",
+                planner_summary.get("planner_kind"),
+                planner_summary.get("final_plan_source"),
+                planner_summary.get("task_type"),
+                planner_summary.get("pool_id"),
+            )
             return plan
         except Exception as exc:
             logger.exception(f"Agent planner failed: {exc}")
@@ -138,8 +162,10 @@ class AgentQueen:
                 ),
                 planner_kind="rule_fallback",
             )
-            trace["planner"] = {
+            trace["planner_summary"] = {
                 "planner_kind": fallback.meta.get("planner_kind"),
+                "planner_stage": fallback.meta.get("planner_stage"),
+                "final_plan_source": fallback.meta.get("final_plan_source"),
                 "task_type": fallback.task_type,
                 "pool_id": fallback.pool_id,
                 "fallback": True,
@@ -156,29 +182,55 @@ class AgentQueen:
     ) -> ContextPack:
         try:
             ctx = await self.context_builder.build(req, plan)
-            trace["context"] = {
-                "required_context": list(plan.required_context),
-                "slots_hit": dict(ctx.slots_hit or {}),
-                "recent_obs_count": len(ctx.recent_obs),
-            }
+            context_meta = dict(ctx.meta or {})
+            context_summary = _build_context_summary(plan, ctx, context_meta)
+            trace["context_build_summary"] = context_summary
+            logger.debug(
+                "Agent context summary: requested=%s auto=%s effective=%s missing=%s errors=%s",
+                context_summary.get("requested_by_plan"),
+                context_summary.get("auto_injected"),
+                context_summary.get("requested_effective"),
+                context_summary.get("missing"),
+                context_summary.get("errors_count"),
+            )
             return ctx
         except Exception as exc:
             logger.exception(f"Agent context builder failed: {exc}")
             errors.append(f"context:{exc}")
             recent_obs = list(req.session_state.recent_obs or [])
+            slots = {
+                "recent_obs": ContextSlot(
+                    name="recent_obs",
+                    value=recent_obs,
+                    priority=90,
+                    source="fallback",
+                    status="ok" if recent_obs else "missing",
+                    meta={"fallback": True},
+                )
+            }
             ctx = ContextPack(
+                slots=slots,
                 recent_obs=recent_obs,
                 slots_hit={"recent_obs": len(recent_obs) > 0},
-                meta={"fallback": True},
+                meta={
+                    "fallback": True,
+                    "requested_by_plan": list(plan.required_context),
+                    "auto_injected": [],
+                    "requested_effective": list(plan.required_context),
+                    "provided": ["recent_obs"] if recent_obs else [],
+                    "provided_effective": ["recent_obs"] if recent_obs else [],
+                    "missing": ["recent_obs"] if not recent_obs else [],
+                    "errors": [{"slot": "recent_obs", "error": str(exc)}],
+                    "priorities": {"recent_obs": 90},
+                    "priority_sources": {"recent_obs": "default"},
+                },
             )
-            trace["context"] = {
-                "required_context": list(plan.required_context),
-                "slots_hit": dict(ctx.slots_hit),
-                "recent_obs_count": len(ctx.recent_obs),
-                "fallback": True,
-                "error": str(exc),
-            }
+            context_summary = _build_context_summary(plan, ctx, ctx.meta)
+            context_summary["fallback"] = True
+            context_summary["error"] = str(exc)
+            trace["context_build_summary"] = context_summary
             return ctx
+
 
     def _safe_pick_pool(
         self,
@@ -314,6 +366,59 @@ class AgentQueen:
                 ),
                 metadata=dict(metadata),
             )
+
+
+def _build_context_summary(plan: TaskPlan, ctx: ContextPack, meta: Dict[str, Any]) -> Dict[str, Any]:
+    slots = getattr(ctx, "slots", {}) or {}
+    slot_summaries: list[dict[str, Any]] = []
+    for name, slot in slots.items():
+        slot_meta = dict(slot.meta or {}) if hasattr(slot, "meta") else {}
+        summary = {
+            "name": name,
+            "status": getattr(slot, "status", None),
+            "priority": getattr(slot, "priority", None),
+        }
+        if name == "current_input":
+            text = ""
+            value = getattr(slot, "value", None)
+            if isinstance(value, dict):
+                text = value.get("text") or ""
+            summary["text_len"] = len(text)
+            summary["preview"] = text[:40]
+        elif name == "recent_obs":
+            count = slot_meta.get("count")
+            if count is None and isinstance(getattr(slot, "value", None), list):
+                count = len(slot.value)
+            summary["count"] = count
+        elif name == "plan_meta":
+            value = getattr(slot, "value", None)
+            if isinstance(value, dict):
+                meta_value = value.get("meta", {}) if isinstance(value.get("meta"), dict) else {}
+                summary.update(
+                    {
+                        "task_type": value.get("task_type"),
+                        "pool_id": value.get("pool_id"),
+                        "strategy": meta_value.get("strategy"),
+                        "complexity": meta_value.get("complexity"),
+                        "confidence": meta_value.get("confidence"),
+                    }
+                )
+        slot_summaries.append(summary)
+
+    errors = meta.get("errors") or []
+    return {
+        "requested_by_plan": meta.get("requested_by_plan"),
+        "auto_injected": meta.get("auto_injected"),
+        "requested_effective": meta.get("requested_effective"),
+        "provided": meta.get("provided"),
+        "missing": meta.get("missing"),
+        "errors": errors,
+        "errors_count": len(errors),
+        "priorities": meta.get("priorities"),
+        "priority_sources": meta.get("priority_sources"),
+        "slots": slot_summaries,
+        "recent_obs_count": len(ctx.recent_obs),
+    }
 
 
 # 兼容导出：旧测试可能直接引用这些名字

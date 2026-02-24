@@ -12,6 +12,7 @@ from loguru import logger
 
 from ...llm import LLMProvider
 from ..types import AgentRequest, TaskPlan
+from .types import PlannerInputView
 from .validator import normalize_task_plan_payload
 
 _FENCED_JSON_RE = re.compile(r"^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$", re.IGNORECASE)
@@ -46,9 +47,15 @@ class LLMPlanner:
         *,
         rule_plan: Optional[TaskPlan] = None,
         recent_obs_count: Optional[int] = None,
+        view: PlannerInputView | None = None,
     ) -> TaskPlan:
         """调用 LLM 并返回规范化 TaskPlan。"""
-        planner_input = self._build_planner_input(req, rule_plan=rule_plan, recent_obs_count=recent_obs_count)
+        planner_input = self._build_planner_input(
+            req,
+            rule_plan=rule_plan,
+            recent_obs_count=recent_obs_count,
+            view=view,
+        )
         messages = self._build_messages(planner_input)
 
         provider = self._get_or_create_provider()
@@ -87,21 +94,23 @@ class LLMPlanner:
         *,
         rule_plan: Optional[TaskPlan],
         recent_obs_count: Optional[int],
+        view: PlannerInputView | None,
     ) -> Dict[str, Any]:
         payload = getattr(req.obs, "payload", None)
-        text = getattr(payload, "text", None)
+        text = view.current_input_text if view is not None else getattr(payload, "text", None)
         text = text.strip() if isinstance(text, str) else ""
 
-        hint = req.gate_hint or getattr(req.gate_decision, "hint", None)
-        hint_summary = {}
-        if hint is not None:
-            hint_summary = {
-                "model_tier": getattr(hint, "model_tier", None),
-                "response_policy": getattr(hint, "response_policy", None),
-                "budget_level": getattr(getattr(hint, "budget", None), "budget_level", None),
-                "max_tokens": getattr(getattr(hint, "budget", None), "max_tokens", None),
-                "max_tool_calls": getattr(getattr(hint, "budget", None), "max_tool_calls", None),
-            }
+        hint_summary = view.gate_hint_view if view is not None else {}
+        if not hint_summary:
+            hint = req.gate_hint or getattr(req.gate_decision, "hint", None)
+            if hint is not None:
+                hint_summary = {
+                    "model_tier": getattr(hint, "model_tier", None),
+                    "response_policy": getattr(hint, "response_policy", None),
+                    "budget_level": getattr(getattr(hint, "budget", None), "budget_level", None),
+                    "max_tokens": getattr(getattr(hint, "budget", None), "max_tokens", None),
+                    "max_tool_calls": getattr(getattr(hint, "budget", None), "max_tool_calls", None),
+                }
 
         rule_guess = None
         if rule_plan is not None:
@@ -116,7 +125,7 @@ class LLMPlanner:
             "text": text,
             "rule_guess": rule_guess,
             "recent_obs_count": recent_obs_count if recent_obs_count is not None else len(req.session_state.recent_obs or []),
-            "recent_obs_preview": _extract_recent_obs_preview(req, limit=6, max_chars=160),
+            "recent_obs_preview": view.recent_obs_view if view is not None else _extract_recent_obs_preview(req, limit=6, max_chars=160),
             "gate_hint": hint_summary,
             "allowed_task_types": ["chat", "code", "plan", "creative"],
             "allowed_required_context": ["recent_obs", "gate_hint", "memory_summary", "retrieved_docs", "tool_results"],

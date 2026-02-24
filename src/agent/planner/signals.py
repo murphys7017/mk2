@@ -39,9 +39,9 @@ _CREATIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
-def extract_signals(req: AgentRequest) -> PlannerSignals:
+def extract_signals(req: AgentRequest, *, text_override: str | None = None) -> PlannerSignals:
     """从请求中抽取 RulePlanner 需要的简单信号。"""
-    text = _extract_text(req)
+    text = text_override if text_override is not None else _extract_text(req)
     return PlannerSignals(
         text=text,
         has_code_signal=_matches_any(text, _CODE_PATTERNS),

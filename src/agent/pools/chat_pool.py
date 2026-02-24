@@ -14,8 +14,12 @@ class ChatPool:
     name = "chat_pool"
 
     async def run(self, req: AgentRequest, plan: TaskPlan, ctx: ContextPack) -> Dict[str, Any]:
+        current_slot = ctx.slots.get("current_input") if hasattr(ctx, "slots") else None
+        slot_value = current_slot.value if current_slot else {}
+        slot_text = slot_value.get("text") if isinstance(slot_value, dict) else None
+
         payload = getattr(req.obs, "payload", None)
-        text = getattr(payload, "text", None)
+        text = slot_text if isinstance(slot_text, str) else getattr(payload, "text", None)
         normalized = (text or "").strip() if isinstance(text, str) else ""
 
         if not normalized:

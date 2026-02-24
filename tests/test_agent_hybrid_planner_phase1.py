@@ -9,6 +9,7 @@ import pytest
 
 from src.agent.planner.hybrid_planner import HybridPlanner
 from src.agent.planner.llm_planner import LLMPlanner
+from src.agent.planner.types import PlannerInputView
 from src.agent.queen import AgentQueen
 from src.agent.types import AgentRequest
 from src.gate.types import GateAction, GateDecision, Scene
@@ -56,6 +57,29 @@ class _SpyProvider:
         return json.dumps(self._payload, ensure_ascii=False)
 
 
+class _CapturePlannerInputProvider:
+    def __init__(self) -> None:
+        self.last_input = None
+
+    def call(self, messages, **params):  # type: ignore[no-untyped-def]
+        payload = json.loads(messages[1]["content"])
+        self.last_input = payload
+        return json.dumps(
+            {
+                "task_type": "chat",
+                "pool_id": "chat",
+                "required_context": ["recent_obs"],
+                "meta": {
+                    "reason": "ok",
+                    "confidence": 0.9,
+                    "strategy": "single_pass",
+                    "complexity": "simple",
+                },
+            },
+            ensure_ascii=False,
+        )
+
+
 def _make_request(text: str) -> AgentRequest:
     session_key = "dm:hybrid-phase1"
     obs = Observation(
@@ -96,8 +120,8 @@ async def test_hybrid_planner_falls_back_on_invalid_json() -> None:
     plan = await planner.plan(_make_request("pytest 失败了，Traceback 如下"))
     assert plan.task_type == "code"  # 来自 rule fallback
     assert plan.meta.get("planner_kind") == "hybrid_rule_fallback"
-    assert plan.meta.get("llm_called") is True
-    assert plan.meta.get("llm_parse_ok") is False
+    assert plan.meta.get("planner_llm_called") is True
+    assert plan.meta.get("planner_llm_parse_ok") is False
     assert isinstance(plan.meta.get("fallback_reason"), str)
 
 
@@ -116,8 +140,8 @@ async def test_hybrid_planner_parses_llm_json_and_normalizes() -> None:
     assert plan.task_type == "plan"
     assert plan.pool_id == "plan"
     assert plan.meta.get("planner_kind") == "hybrid_llm"
-    assert plan.meta.get("llm_parse_ok") is True
-    assert plan.meta.get("llm_called") is True
+    assert plan.meta.get("planner_llm_parse_ok") is True
+    assert plan.meta.get("planner_llm_called") is True
     assert plan.meta.get("confidence") == 1.0  # 裁剪到 [0,1]
     assert "unknown_slot" not in plan.required_context
     assert "recent_obs" in plan.required_context
@@ -136,14 +160,14 @@ async def test_agent_queen_trace_contains_hybrid_planner_signals() -> None:
     queen = AgentQueen(planner=hybrid)
 
     outcome = await queen.handle(_make_request("pytest 报错了"))
-    planner_trace = outcome.trace.get("planner", {})
+    planner_trace = outcome.trace.get("planner_summary", {})
 
     assert len(outcome.emit) >= 1
     assert outcome.emit[0].obs_type == ObservationType.MESSAGE
     assert isinstance(outcome.emit[0].metadata, dict)
     assert "planner_kind" in planner_trace
-    assert "llm_called" in planner_trace
-    assert "llm_parse_ok" in planner_trace
+    assert "planner_llm_called" in planner_trace
+    assert "planner_llm_parse_ok" in planner_trace
 
 
 @pytest.mark.asyncio
@@ -189,6 +213,7 @@ async def test_hybrid_planner_uses_small_llm_without_escalation() -> None:
     assert plan.meta.get("planner_kind") == "hybrid_small_llm"
     assert plan.task_type == "chat"
     assert plan.meta.get("escalated_to_big") is False
+    assert plan.meta.get("final_plan_source") == "small_llm"
     assert small_provider.calls == 1
     assert big_provider.calls == 0
 
@@ -236,6 +261,25 @@ async def test_hybrid_planner_escalates_to_big_llm_when_small_requires() -> None
     assert plan.meta.get("planner_kind") == "hybrid_big_llm"
     assert plan.task_type == "plan"
     assert plan.meta.get("escalated_to_big") is True
-    assert plan.meta.get("small_need_big_model") is True
+    assert plan.meta.get("final_plan_source") == "big_llm"
     assert small_provider.calls == 1
     assert big_provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_llm_planner_uses_view_recent_obs_preview() -> None:
+    provider = _CapturePlannerInputProvider()
+    llm = LLMPlanner(config={"llm": {"timeout_seconds": 1}}, llm_provider=provider)  # type: ignore[arg-type]
+
+    view = PlannerInputView(
+        current_input_text="hello",
+        recent_obs_view=[{"actor_id": "u1", "source_name": "test", "text": "from_view"}],
+        session_state_view={},
+        gate_hint_view={},
+    )
+
+    await llm.plan(_make_request("ignored"), view=view)
+
+    assert provider.last_input is not None
+    assert provider.last_input.get("recent_obs_preview")[0]["text"] == "from_view"
+    assert provider.last_input.get("text") == "hello"
