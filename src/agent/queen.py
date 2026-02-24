@@ -119,6 +119,7 @@ class AgentQueen:
                 "confidence": plan.meta.get("confidence"),
                 "reason": plan.meta.get("reason"),
             }
+            logger.debug(f"Agent planner output: {plan}")
             return plan
         except Exception as exc:
             logger.exception(f"Agent planner failed: {exc}")

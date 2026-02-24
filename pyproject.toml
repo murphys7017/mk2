@@ -1,11 +1,12 @@
 [project]
-name = "mk2"
+name = "ag99"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "PyYAML>=6.0.1",
+    "cryptography>=46.0.5",
     "dotenv>=0.9.9",
     "loguru>=0.7.3",
     "pymysql>=1.1.2",

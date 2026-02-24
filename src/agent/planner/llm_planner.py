@@ -116,6 +116,7 @@ class LLMPlanner:
             "text": text,
             "rule_guess": rule_guess,
             "recent_obs_count": recent_obs_count if recent_obs_count is not None else len(req.session_state.recent_obs or []),
+            "recent_obs_preview": _extract_recent_obs_preview(req, limit=6, max_chars=160),
             "gate_hint": hint_summary,
             "allowed_task_types": ["chat", "code", "plan", "creative"],
             "allowed_required_context": ["recent_obs", "gate_hint", "memory_summary", "retrieved_docs", "tool_results"],
@@ -177,6 +178,40 @@ def _to_positive_float(raw: Any, *, default: float) -> float:
     except (TypeError, ValueError):
         return default
     return value if value > 0 else default
+
+
+def _extract_recent_obs_preview(
+    req: AgentRequest,
+    *,
+    limit: int,
+    max_chars: int,
+) -> list[dict[str, str]]:
+    recent = list(req.session_state.recent_obs or [])
+    if not recent:
+        return []
+
+    out: list[dict[str, str]] = []
+    for obs in recent[-limit:]:
+        payload = getattr(obs, "payload", None)
+        text = getattr(payload, "text", None)
+        if not isinstance(text, str):
+            continue
+        normalized = text.strip()
+        if not normalized:
+            continue
+        if len(normalized) > max_chars:
+            normalized = normalized[: max_chars - 3] + "..."
+
+        actor = getattr(obs, "actor", None)
+        actor_id = getattr(actor, "actor_id", None)
+        out.append(
+            {
+                "actor_id": str(actor_id or ""),
+                "source_name": str(getattr(obs, "source_name", "") or ""),
+                "text": normalized,
+            }
+        )
+    return out
 
 
 def _default_planner_prompt() -> str:

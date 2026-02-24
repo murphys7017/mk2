@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -43,6 +44,16 @@ class _FakeGoodLLMProvider:
             "}\n"
             "```"
         )
+
+
+class _SpyProvider:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+        self.calls = 0
+
+    def call(self, messages, **params):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        return json.dumps(self._payload, ensure_ascii=False)
 
 
 def _make_request(text: str) -> AgentRequest:
@@ -133,3 +144,98 @@ async def test_agent_queen_trace_contains_hybrid_planner_signals() -> None:
     assert "planner_kind" in planner_trace
     assert "llm_called" in planner_trace
     assert "llm_parse_ok" in planner_trace
+
+
+@pytest.mark.asyncio
+async def test_hybrid_planner_uses_small_llm_without_escalation() -> None:
+    small_provider = _SpyProvider(
+        {
+            "task_type": "chat",
+            "pool_id": "chat",
+            "required_context": ["recent_obs"],
+            "meta": {
+                "reason": "small_model_confident",
+                "confidence": 0.91,
+                "strategy": "single_pass",
+                "complexity": "simple",
+                "need_big_model": False,
+            },
+        }
+    )
+    big_provider = _SpyProvider(
+        {
+            "task_type": "plan",
+            "pool_id": "plan",
+            "required_context": ["recent_obs", "gate_hint"],
+            "meta": {
+                "reason": "big_model_should_not_be_called",
+                "confidence": 0.8,
+                "strategy": "draft_critique",
+                "complexity": "multi_step",
+            },
+        }
+    )
+
+    small = LLMPlanner(config={"llm": {"timeout_seconds": 1}}, llm_provider=small_provider)  # type: ignore[arg-type]
+    big = LLMPlanner(config={"llm": {"timeout_seconds": 1}}, llm_provider=big_provider)  # type: ignore[arg-type]
+    planner = HybridPlanner(
+        config={"timeout_seconds": 2, "small_llm": {"enabled": True}},
+        llm_planner=big,
+        small_llm_planner=small,
+    )
+
+    plan = await planner.plan(_make_request("你好，帮我打个招呼就行"))
+
+    assert plan.meta.get("planner_kind") == "hybrid_small_llm"
+    assert plan.task_type == "chat"
+    assert plan.meta.get("escalated_to_big") is False
+    assert small_provider.calls == 1
+    assert big_provider.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_hybrid_planner_escalates_to_big_llm_when_small_requires() -> None:
+    small_provider = _SpyProvider(
+        {
+            "task_type": "plan",
+            "pool_id": "plan",
+            "required_context": ["recent_obs"],
+            "meta": {
+                "reason": "ambiguous_architecture_request",
+                "confidence": 0.73,
+                "strategy": "draft_critique",
+                "complexity": "multi_step",
+                "need_big_model": True,
+            },
+        }
+    )
+    big_provider = _SpyProvider(
+        {
+            "task_type": "plan",
+            "pool_id": "plan",
+            "required_context": ["recent_obs", "gate_hint"],
+            "meta": {
+                "reason": "big_model_refined_plan",
+                "confidence": 0.89,
+                "strategy": "draft_critique",
+                "complexity": "multi_step",
+            },
+        }
+    )
+
+    small = LLMPlanner(config={"llm": {"timeout_seconds": 1}}, llm_provider=small_provider)  # type: ignore[arg-type]
+    big = LLMPlanner(config={"llm": {"timeout_seconds": 1}}, llm_provider=big_provider)  # type: ignore[arg-type]
+    planner = HybridPlanner(
+        config={"timeout_seconds": 2, "small_llm": {"enabled": True}},
+        llm_planner=big,
+        small_llm_planner=small,
+    )
+
+    plan = await planner.plan(_make_request("帮我做一个支付系统与风控系统的架构方案"))
+
+    assert plan.meta.get("planner_kind") == "hybrid_big_llm"
+    assert plan.task_type == "plan"
+    assert plan.meta.get("escalated_to_big") is True
+    assert plan.meta.get("small_need_big_model") is True
+    assert small_provider.calls == 1
+    assert big_provider.calls == 1
