@@ -28,7 +28,7 @@ class AgentRequest:
 
 @dataclass
 class TaskPlan:
-    """Queen 内部任务计划（替代旧的 Plan 命名冲突）。"""
+    """Queen 内部任务计划（当前主结构，替代旧 Plan 命名冲突）。"""
 
     task_type: str = "chat"
     pool_id: str = "chat"
@@ -58,7 +58,7 @@ class AgentOutcome:
 
 @dataclass
 class InfoPlan:
-    """旧信息需求计划（Legacy）。"""
+    """旧信息需求计划（Legacy，保留但不用于当前主链路）。"""
 
     sources: List[str] = field(default_factory=list)
     budget: Dict[str, Any] = field(default_factory=dict)
@@ -109,7 +109,7 @@ class Step:
 
 @dataclass
 class Plan:
-    """[Deprecated] 旧执行计划（Legacy Plan）。"""
+    """[Deprecated] 旧执行计划（Legacy Plan，保留兼容）。"""
 
     steps: List[Step] = field(default_factory=list)
     reason: str = ""

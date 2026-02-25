@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import pytest
 
 from src.agent.context.builder import SlotContextBuilder
-from src.agent.context.providers.base import ContextProvider
 from src.agent.context.types import ProviderResult
 from src.agent.queen import AgentQueen
 from src.agent.types import AgentRequest, TaskPlan

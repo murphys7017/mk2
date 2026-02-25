@@ -336,16 +336,17 @@ class MemoryItem(SerializableMixin):
 
 
 # =============================================================================
-# ContextPack - 上下文包
+# ContextPack - 上下文包（Memory 侧定义）
 # =============================================================================
 
 @dataclass
 class ContextPack(SerializableMixin):
     """
     上下文包（Context Pack）
-    
-    打包的上下文信息，提供给 Agent 使用
-    Packaged context information for Agent
+
+    注意：此处是 Memory 子系统的 ContextPack，
+    与 Agent ContextBuilder 的 ContextPack 类型不同。
+    Packaged memory context (memory layer only).
     """
     persona: list[MemoryItem] = field(default_factory=list)
     user_profile: list[MemoryItem] = field(default_factory=list)

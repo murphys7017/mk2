@@ -7,6 +7,7 @@ database:
   # MySQL: mysql+pymysql://user:password@host:3306/dbname
   # SQLite: sqlite:///./memory.db
   # SQLite 内存: sqlite:///:memory:
+  # 说明：mk2 为历史库名示例，可替换为 ag99 等新库名
   dsn: "mysql+pymysql://root:123456@localhost:3306/mk2"
   
   # 连接池设置

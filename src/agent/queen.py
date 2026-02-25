@@ -18,7 +18,7 @@ from .context import ContextBuilder, RecentObsContextBuilder, SlotContextBuilder
 from .context.types import ContextSlot
 from .planner import HybridPlanner, LLMPlanner, Planner, RulePlanner
 from .planner.validator import normalize_task_plan
-from .planner.types import build_planner_input_view, PlannerInputView
+from .planner.types import build_planner_input_view
 from .pools import AgentPoolRouter, Aggregator, ChatPool, DraftAggregator, Pool, PoolRouter
 from .registry import AgentConfigRegistry
 from .speaker import AgentSpeaker, Speaker
